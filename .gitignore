@@ -1,0 +1,10 @@
+.env
+.token_cache.json
+*.eml
+results.csv
+__pycache__/
+*.pyc
+.DS_Store
+CLAUDE.md
+*-instructions.md
+*-notes.md
