@@ -2,10 +2,9 @@
 
 Screens PubMed alert emails for relevant papers and extracts structured information into a CSV using the Claude API.
 
-For each paper in a PubMed alert, the tool:
-1. Fetches the abstract and MeSH terms from NCBI
-2. Uses Claude to decide if the paper is relevant (schizophrenia + genomics methods)
-3. Extracts structured fields from relevant papers: methodology, sample type, causal claims, genetics claims, and a plain-language summary
+There are two scripts:
+- **`screen.py`** — fixed pipeline with hardcoded schizophrenia genomics criterion and output fields
+- **`agent.py`** — agentic version where you specify the screening criterion and output fields at runtime
 
 ## Setup
 
@@ -24,21 +23,41 @@ cp .env.example .env
 
 ## Usage
 
-Save your PubMed alert email as a `.eml` file (in Gmail: three-dot menu → Download message), then run:
+Save your PubMed alert email as a `.eml` file (in Gmail: three-dot menu → Download message).
+
+### screen.py — fixed pipeline
+
+Screens for schizophrenia genomics papers with a fixed set of output fields:
 
 ```bash
 python screen.py alert.eml
+python screen.py alert.eml --output my_results.csv
 ```
 
-Results are written to `results.csv` by default. To specify a different output file:
+### agent.py — configurable pipeline
+
+Specify your own screening criterion and output fields interactively:
 
 ```bash
-python screen.py alert.eml --output my_results.csv
+python agent.py alert.eml
+```
+
+Or use `--default` to skip the prompts and use the same schizophrenia genomics defaults as `screen.py`:
+
+```bash
+python agent.py alert.eml --default
+```
+
+Override criterion and/or fields via flags:
+
+```bash
+python agent.py alert.eml --criterion "Is this about treatment-resistant schizophrenia?" --fields "methodology, sample_size, treatment, outcomes"
+python agent.py alert.eml --output my_results.csv
 ```
 
 ## Output
 
-The CSV contains one row per relevant paper with these columns:
+The CSV contains one row per relevant paper. When using `screen.py` or `agent.py --default`, the columns are:
 
 | Column | Description |
 |---|---|
@@ -50,5 +69,7 @@ The CSV contains one row per relevant paper with these columns:
 | `causal_claims` | Statements about causes of schizophrenia inferred from the data |
 | `genetics_claims` | Claims about specific genes, loci, or pathways |
 | `summary` | 2-3 sentence plain-language summary for triage |
+
+When using `agent.py` with custom fields, columns are derived from whatever fields you specify.
 
 The CSV can be imported directly into Google Sheets (File → Import).
