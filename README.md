@@ -24,20 +24,20 @@ Save your PubMed alert email as a `.eml` file (in Gmail: three-dot menu → Down
 Specify your own screening criterion and output fields interactively:
 
 ```bash
-python agent.py alert.eml
+python screen.py alert.eml
 ```
 
 Use `--default` to skip the prompts and use schizophrenia genomics defaults:
 
 ```bash
-python agent.py alert.eml --default
+python screen.py alert.eml --default
 ```
 
 Override criterion and/or fields via flags:
 
 ```bash
-python agent.py alert.eml --criterion "Is this about treatment-resistant schizophrenia?" --fields "methodology, sample_size, treatment, outcomes"
-python agent.py alert.eml --output my_results.csv
+python screen.py alert.eml --criterion "Is this about treatment-resistant schizophrenia?" --fields "methodology, sample_size, treatment, outcomes"
+python screen.py alert.eml --output my_results.csv
 ```
 
 ## Output
