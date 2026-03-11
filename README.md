@@ -73,3 +73,7 @@ The CSV contains one row per relevant paper. When using `screen.py` or `agent.py
 When using `agent.py` with custom fields, columns are derived from whatever fields you specify.
 
 The CSV can be imported directly into Google Sheets (File → Import).
+
+## Known Limitations
+
+- Papers without abstracts in PubMed are skipped silently.
