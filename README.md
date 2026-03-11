@@ -59,6 +59,24 @@ With custom fields, columns are derived from whatever fields you specify.
 
 The CSV can be imported directly into Google Sheets (File → Import).
 
+## Pipeline
+
+```mermaid
+flowchart TD
+    A[PubMed alert .eml] --> B[Extract PMIDs]
+    B --> C[Build output schema\nfrom field descriptions]
+    C --> D{For each PMID}
+    D --> E[Fetch abstract +\nMeSH terms from NCBI]
+    E --> F{Has abstract?}
+    F -- No --> G[Skip]
+    F -- Yes --> H[Screen paper\nHaiku]
+    H --> I{Relevant?}
+    I -- No --> G
+    I -- Yes --> J[Extract fields\nHaiku]
+    J --> D
+    D -- Done --> K[Write CSV]
+```
+
 ## Known Limitations
 
 - Papers without abstracts in PubMed are skipped silently.
