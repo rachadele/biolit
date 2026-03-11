@@ -2,12 +2,13 @@
 """
 PubMed Alert Literature Screener — Agentic Version
 
-Uses a Claude agent (tool-use loop) to screen a PubMed alert .eml file
-and extract structured fields from relevant papers. The screening criterion
-and output fields are specified by the user at runtime.
+Like screen.py but with a configurable screening criterion and output fields.
+A single Claude call translates the user's field descriptions into a structured
+schema, then a Python loop handles fetch/screen/extract for each paper.
 
 Usage:
     python agent.py pubmed.eml
+    python agent.py pubmed.eml --default
     python agent.py pubmed.eml --criterion "Is this about schizophrenia genomics?" --fields "methodology, sample_type, summary"
     python agent.py pubmed.eml --output results.csv
 """
@@ -29,17 +30,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
-AGENT_MODEL = "claude-sonnet-4-6"       # orchestrates the tool-use loop
-EXTRACTION_MODEL = "claude-haiku-4-5-20251001"  # screen/extract sub-calls (cheaper)
+MODEL = "claude-haiku-4-5-20251001"
+
+DEFAULT_CRITERION = (
+    "Is this paper SPECIFICALLY about schizophrenia AND does it use genetics "
+    "or genomics methods (e.g. GWAS, WGS, scRNA-seq, proteomics, gene expression)?"
+)
+DEFAULT_FIELDS = "methodology, sample_type, causal_claims, genetics_claims, summary"
 
 
-# --- Helper functions (reused from screen.py) ---
+# --- Helpers (shared with screen.py) ---
 
 def read_eml_body(eml_path):
     """Extract body text from a PubMed alert .eml file."""
     with open(eml_path, "rb") as f:
         msg = email.message_from_binary_file(f)
-
     body = ""
     for part in msg.walk():
         if part.get_content_type() in ("text/plain", "text/html"):
@@ -69,12 +74,10 @@ def fetch_pubmed_data(pmid):
         timeout=15
     )
     response.raise_for_status()
-
     root = ET.fromstring(response.content)
     article = root.find(".//PubmedArticle")
     if article is None:
         return None
-
     title = article.findtext(".//ArticleTitle", default="").strip()
     abstract_parts = article.findall(".//AbstractText")
     abstract = " ".join((t.text or "").strip() for t in abstract_parts if t.text)
@@ -82,7 +85,6 @@ def fetch_pubmed_data(pmid):
         m.findtext("DescriptorName", default="")
         for m in article.findall(".//MeshHeading")
     ]
-
     return {
         "pmid": pmid,
         "title": title,
@@ -100,167 +102,59 @@ def parse_json_response(text):
     return json.loads(text.strip())
 
 
-# --- Tool definitions ---
+# --- Claude calls ---
 
-TOOLS = [
-    {
-        "name": "parse_email",
-        "description": (
-            "Parse a PubMed alert .eml file and return a list of PMIDs found in it. "
-            "Call this first to discover which papers to process."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "eml_path": {
-                    "type": "string",
-                    "description": "Path to the .eml file."
-                }
-            },
-            "required": ["eml_path"]
-        }
-    },
-    {
-        "name": "fetch_paper",
-        "description": (
-            "Fetch title, abstract, and MeSH terms for a single PMID from the NCBI "
-            "E-utilities API. Returns an error key if the paper has no abstract."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pmid": {
-                    "type": "string",
-                    "description": "The PubMed ID (numeric string) to fetch."
-                }
-            },
-            "required": ["pmid"]
-        }
-    },
-    {
-        "name": "screen_paper",
-        "description": (
-            "Screen a paper for relevance using Claude and the user-specified criterion. "
-            "Returns {relevant: bool, reason: str}."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pmid":       {"type": "string"},
-                "title":      {"type": "string"},
-                "abstract":   {"type": "string"},
-                "mesh_terms": {"type": "array", "items": {"type": "string"}},
-                "criterion":  {
-                    "type": "string",
-                    "description": "The relevance criterion as a yes/no question."
-                }
-            },
-            "required": ["pmid", "title", "abstract", "mesh_terms", "criterion"]
-        }
-    },
-    {
-        "name": "extract_fields",
-        "description": (
-            "Extract structured fields from a paper using Claude. "
-            "Pass an output_schema dict where keys are field names and values describe what to extract. "
-            "Returns a dict matching the schema, plus title, url, and pmid."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pmid":          {"type": "string"},
-                "title":         {"type": "string"},
-                "abstract":      {"type": "string"},
-                "mesh_terms":    {"type": "array", "items": {"type": "string"}},
-                "url":           {"type": "string"},
-                "output_schema": {
-                    "type": "object",
-                    "description": (
-                        "Keys are field names, values are descriptions of what to extract. "
-                        "Example: {\"methodology\": \"general method used\", "
-                        "\"sample_type\": \"tissue and origin\"}"
-                    )
-                }
-            },
-            "required": ["pmid", "title", "abstract", "mesh_terms", "url", "output_schema"]
-        }
-    },
-    {
-        "name": "write_results",
-        "description": (
-            "Write the collected extraction results to a CSV file. "
-            "Call this once, after all papers have been processed."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "results": {
-                    "type": "array",
-                    "description": "List of result dicts, one per relevant paper.",
-                    "items": {"type": "object"}
-                },
-                "output_path": {
-                    "type": "string",
-                    "description": "Path to the output CSV file."
-                }
-            },
-            "required": ["results", "output_path"]
-        }
-    }
-]
+def build_output_schema(client, fields_description):
+    """Use Claude to turn a comma-separated field list into a schema dict.
+
+    The schema dict maps field names to plain-English descriptions of what
+    to extract, which is then passed verbatim into the extraction prompt.
+    """
+    prompt = f"""Convert this list of field names into a JSON object where each key is a field name and each value is a clear description of what to extract from a scientific paper abstract.
+
+Fields: {fields_description}
+
+Respond with valid JSON only, no other text. Example format:
+{{"methodology": "general experimental method used (e.g. GWAS, WGS, scRNA-seq)", "sample_type": "tissue type and biological origin of samples"}}"""
+
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return parse_json_response(response.content[0].text)
 
 
-# --- Tool dispatcher ---
+def screen_paper(client, paper, criterion):
+    """Ask Claude whether a paper meets the relevance criterion."""
+    prompt = f"""You are screening a scientific paper for relevance to a literature review.
 
-def dispatch_tool(tool_name, tool_input, client):
-    """Execute a tool call and return the result as a dict."""
+Criterion: {criterion}
 
-    if tool_name == "parse_email":
-        body = read_eml_body(tool_input["eml_path"])
-        pmids = extract_pmids(body)
-        return {"pmids": pmids, "count": len(pmids)}
-
-    elif tool_name == "fetch_paper":
-        try:
-            paper = fetch_pubmed_data(tool_input["pmid"])
-            time.sleep(0.4)  # NCBI rate limit: ~3 req/sec without API key
-        except Exception as e:
-            return {"error": str(e)}
-        if not paper or not paper.get("abstract"):
-            return {"error": "No abstract available"}
-        return paper
-
-    elif tool_name == "screen_paper":
-        prompt = f"""You are screening a scientific paper for relevance to a literature review.
-
-Criterion: {tool_input['criterion']}
-
-Title: {tool_input['title']}
-Abstract: {tool_input['abstract']}
-MeSH terms: {', '.join(tool_input['mesh_terms'])}
+Title: {paper['title']}
+Abstract: {paper['abstract']}
+MeSH terms: {', '.join(paper['mesh_terms'])}
 
 Respond with valid JSON only, no other text:
 {{"relevant": true or false, "reason": "one sentence"}}"""
 
-        response = client.messages.create(
-            model=EXTRACTION_MODEL,
-            max_tokens=150,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        raw = response.content[0].text
-        try:
-            return parse_json_response(raw)
-        except json.JSONDecodeError:
-            return {"error": f"Failed to parse screening response: {raw!r}"}
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=150,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return parse_json_response(response.content[0].text)
 
-    elif tool_name == "extract_fields":
-        schema_str = json.dumps(tool_input["output_schema"], indent=2)
-        prompt = f"""Extract structured information from this paper.
+
+def extract_fields(client, paper, output_schema):
+    """Extract structured fields from a paper using the provided schema."""
+    schema_str = json.dumps(output_schema, indent=2)
+    prompt = f"""Extract structured information from this paper.
 Use only what is stated in the abstract — do not speculate.
 
-Title: {tool_input['title']}
-Abstract: {tool_input['abstract']}
-MeSH terms: {', '.join(tool_input['mesh_terms'])}
+Title: {paper['title']}
+Abstract: {paper['abstract']}
+MeSH terms: {', '.join(paper['mesh_terms'])}
 
 Extract the following fields. Respond with valid JSON only, no other text.
 Fields to extract:
@@ -268,125 +162,87 @@ Fields to extract:
 
 Return a JSON object with exactly those keys. Use null for fields not determinable."""
 
-        response = client.messages.create(
-            model=EXTRACTION_MODEL,
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        raw = response.content[0].text
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    result = parse_json_response(response.content[0].text)
+    result["title"] = paper["title"]
+    result["url"] = paper["url"]
+    result["pmid"] = paper["pmid"]
+    return result
+
+
+# --- Pipeline ---
+
+def run(client, eml_path, criterion, fields_description, output_path):
+    # Step 1: translate field names into a schema
+    print("Building output schema...")
+    output_schema = build_output_schema(client, fields_description)
+    print(f"  Fields: {', '.join(output_schema.keys())}\n")
+
+    # Step 2: parse email
+    body = read_eml_body(eml_path)
+    pmids = extract_pmids(body)
+    print(f"Found {len(pmids)} papers in {eml_path}\n")
+
+    # Step 3: fetch → screen → extract
+    results = []
+    for i, pmid in enumerate(pmids, 1):
+        print(f"[{i}/{len(pmids)}] PMID {pmid}", end=" ... ")
+
         try:
-            result = parse_json_response(raw)
-            # Always include these navigation fields in the output
-            result["title"] = tool_input["title"]
-            result["url"] = tool_input["url"]
-            result["pmid"] = tool_input["pmid"]
-            return result
-        except json.JSONDecodeError:
-            return {"error": f"Failed to parse extraction response: {raw!r}"}
+            paper = fetch_pubmed_data(pmid)
+            time.sleep(0.4)  # NCBI rate limit
+        except Exception as e:
+            print(f"fetch error: {e}")
+            continue
 
-    elif tool_name == "write_results":
-        results = tool_input["results"]
-        output_path = tool_input["output_path"]
-        if not results:
-            return {"written": 0, "path": output_path}
-        # Derive column order: title/url/pmid first, then the rest
-        priority = ["title", "url", "pmid"]
-        all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
-        fieldnames = priority + [k for k in all_keys if k not in priority]
-        with open(output_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(results)
-        return {"written": len(results), "path": output_path}
+        if not paper or not paper.get("abstract"):
+            print("skipped (no abstract)")
+            continue
 
-    else:
-        return {"error": f"Unknown tool: {tool_name}"}
+        try:
+            screening = screen_paper(client, paper, criterion)
+        except Exception as e:
+            print(f"screening error: {e}")
+            continue
 
+        if not screening.get("relevant"):
+            print(f"not relevant ({screening.get('reason', '')})")
+            continue
 
-# --- Agent loop ---
+        print(f"relevant — extracting fields")
 
-def run_agent(client, eml_path, criterion, fields_description, output_path):
-    """Run the Claude agent to screen and extract papers from a PubMed alert email."""
+        try:
+            result = extract_fields(client, paper, output_schema)
+            results.append(result)
+        except Exception as e:
+            print(f"  extraction error: {e}")
 
-    system_prompt = f"""You are a literature screening agent. Your job is to process a PubMed alert email and produce a structured CSV of relevant papers.
+    # Step 4: write CSV
+    if not results:
+        print("\nNo relevant papers found.")
+        return
 
-The user's screening criterion:
-  "{criterion}"
+    priority = ["title", "url", "pmid"]
+    all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
+    fieldnames = priority + [k for k in all_keys if k not in priority]
 
-The fields to extract from each relevant paper:
-  {fields_description}
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(results)
 
-Your plan:
-1. Call parse_email to get the list of PMIDs.
-2. For each PMID: call fetch_paper, then screen_paper using the criterion above.
-3. For papers where screen_paper returns relevant=true: call extract_fields.
-   Build an output_schema dict from the fields description above — keys are field names, values describe what to extract.
-4. Once all papers are processed, call write_results with all collected results and output path "{output_path}".
-
-Process papers one at a time (NCBI has rate limits). Print brief progress between papers."""
-
-    messages = [{"role": "user", "content": f"Please process the PubMed alert email at: {eml_path}"}]
-
-    while True:
-        response = client.messages.create(
-            model=AGENT_MODEL,
-            max_tokens=4096,
-            system=system_prompt,
-            tools=TOOLS,
-            messages=messages,
-        )
-
-        # Append full assistant turn to conversation history
-        messages.append({"role": "assistant", "content": response.content})
-
-        # Print any text blocks for live progress feedback
-        for block in response.content:
-            if block.type == "text":
-                print(block.text)
-
-        if response.stop_reason == "end_turn":
-            break
-
-        if response.stop_reason == "max_tokens":
-            print("\n[Warning] Hit max_tokens limit.")
-            break
-
-        if response.stop_reason != "tool_use":
-            print(f"\n[Warning] Unexpected stop reason: {response.stop_reason}")
-            break
-
-        # Execute all tool calls in this turn and collect results
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
-
-            # Print a compact summary of the call (skip long fields like abstract)
-            skip = {"abstract", "mesh_terms"}
-            args_str = ", ".join(
-                f"{k}={repr(v)[:50]}" for k, v in block.input.items() if k not in skip
-            )
-            print(f"  → {block.name}({args_str})")
-
-            result = dispatch_tool(block.name, block.input, client)
-
-            if "error" in result:
-                print(f"    [error] {result['error']}")
-
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": json.dumps(result),
-            })
-
-        messages.append({"role": "user", "content": tool_results})
+    print(f"\nWrote {len(results)} relevant papers to {output_path}")
 
 
 # --- Main ---
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Screen PubMed alert emails using a Claude agent."
+        description="Screen PubMed alert emails with a configurable criterion and output fields."
     )
     parser.add_argument("eml_file", help="Path to the PubMed alert .eml file")
     parser.add_argument("--criterion", default=None,
@@ -405,22 +261,18 @@ def main():
         sys.exit(1)
 
     if args.default:
-        criterion = (
-            "Is this paper SPECIFICALLY about schizophrenia AND does it use genetics "
-            "or genomics methods (e.g. GWAS, WGS, scRNA-seq, proteomics, gene expression)?"
-        )
-        fields = "methodology, sample_type, causal_claims, genetics_claims, summary"
+        criterion = DEFAULT_CRITERION
+        fields = DEFAULT_FIELDS
     else:
         criterion = args.criterion
         if not criterion:
             criterion = input("Screening criterion (yes/no question about relevance): ").strip()
-
         fields = args.fields
         if not fields:
             fields = input("Fields to extract (comma-separated, e.g. methodology, sample_type, summary): ").strip()
 
     client = anthropic.Anthropic(api_key=api_key)
-    run_agent(client, args.eml_file, criterion, fields, args.output)
+    run(client, args.eml_file, criterion, fields, args.output)
 
 
 if __name__ == "__main__":
