@@ -1,10 +1,6 @@
 # PubMed Literature Screener
 
-Screens PubMed alert emails for relevant papers and extracts structured information into a CSV using the Claude API.
-
-There are two scripts:
-- **`screen.py`** — fixed pipeline with hardcoded schizophrenia genomics criterion and output fields
-- **`agent.py`** — agentic version where you specify the screening criterion and output fields at runtime
+Screens PubMed alert emails for relevant papers and extracts structured information into a CSV using the Claude API. Specify your own screening criterion and output fields at runtime.
 
 ## Setup
 
@@ -25,24 +21,13 @@ cp .env.example .env
 
 Save your PubMed alert email as a `.eml` file (in Gmail: three-dot menu → Download message).
 
-### screen.py — fixed pipeline
-
-Screens for schizophrenia genomics papers with a fixed set of output fields:
-
-```bash
-python screen.py alert.eml
-python screen.py alert.eml --output my_results.csv
-```
-
-### agent.py — configurable pipeline
-
 Specify your own screening criterion and output fields interactively:
 
 ```bash
 python agent.py alert.eml
 ```
 
-Or use `--default` to skip the prompts and use the same schizophrenia genomics defaults as `screen.py`:
+Use `--default` to skip the prompts and use schizophrenia genomics defaults:
 
 ```bash
 python agent.py alert.eml --default
@@ -57,7 +42,7 @@ python agent.py alert.eml --output my_results.csv
 
 ## Output
 
-The CSV contains one row per relevant paper. When using `screen.py` or `agent.py --default`, the columns are:
+The CSV contains one row per relevant paper. With `--default`, the columns are:
 
 | Column | Description |
 |---|---|
@@ -70,7 +55,7 @@ The CSV contains one row per relevant paper. When using `screen.py` or `agent.py
 | `genetics_claims` | Claims about specific genes, loci, or pathways |
 | `summary` | 2-3 sentence plain-language summary for triage |
 
-When using `agent.py` with custom fields, columns are derived from whatever fields you specify.
+With custom fields, columns are derived from whatever fields you specify.
 
 The CSV can be imported directly into Google Sheets (File → Import).
 
