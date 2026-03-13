@@ -21,14 +21,12 @@ classifiers = [
 ]
 dependencies = [
     "anthropic",
+    "openai",
     "requests",
     "python-dotenv",
+    "lxml",
+    "pdfminer.six",
 ]
-
-[project.optional-dependencies]
-openai = ["openai"]
-fulltext = ["lxml", "pdfminer.six"]
-all = ["openai", "lxml", "pdfminer.six"]
 
 [project.scripts]
 pubmed-screener = "pubmed_screener.cli:main"

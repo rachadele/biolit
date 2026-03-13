@@ -12,12 +12,6 @@ Install the package (creates the `pubmed-screener` command):
 pip install -e .
 ```
 
-For full-text retrieval and OpenAI support:
-
-```bash
-pip install -e ".[all]"
-```
-
 Copy `.env.example` to `.env` and add your API key:
 
 ```bash
