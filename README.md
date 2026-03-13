@@ -6,8 +6,16 @@ Screens PubMed alert emails for relevant papers and extracts structured informat
 
 **Requirements:** Python 3.8+
 
+Install the package (creates the `pubmed-screener` command):
+
 ```bash
-pip install -r requirements.txt
+pip install -e .
+```
+
+For full-text retrieval and OpenAI support:
+
+```bash
+pip install -e ".[all]"
 ```
 
 Copy `.env.example` to `.env` and add your API key:
@@ -24,19 +32,19 @@ Save your PubMed alert email as a `.eml` file (in Gmail: three-dot menu → Down
 Use `--default` to run with schizophrenia genomics defaults (no prompts):
 
 ```bash
-python screen.py alert.eml --default
+pubmed-screener alert.eml --default
 ```
 
 Or specify criterion and fields interactively:
 
 ```bash
-python screen.py alert.eml
+pubmed-screener alert.eml
 ```
 
 Or pass them as flags:
 
 ```bash
-python screen.py alert.eml --criterion "Is this about treatment-resistant schizophrenia?" --fields "methodology, sample_size, treatment, outcomes"
+pubmed-screener alert.eml --criterion "Is this about treatment-resistant schizophrenia?" --fields "methodology, sample_size, treatment, outcomes"
 ```
 
 ### Full-text retrieval
@@ -49,13 +57,13 @@ Use `--fulltext` to screen and extract from full text instead of just the abstra
 4. Abstract fallback
 
 ```bash
-python screen.py alert.eml --default --fulltext --unpaywall-email you@example.com
+pubmed-screener alert.eml --default --fulltext --unpaywall-email you@example.com
 ```
 
 Limit which sections are sent to the LLM:
 
 ```bash
-python screen.py alert.eml --default --fulltext --sections methods,results
+pubmed-screener alert.eml --default --fulltext --sections methods,results
 ```
 
 ### LLM providers
@@ -64,10 +72,10 @@ The tool supports Anthropic (default), OpenAI, and local Ollama models:
 
 ```bash
 # OpenAI
-python screen.py alert.eml --default --provider openai --model gpt-4o
+pubmed-screener pubmed.eml --default --provider openai --model gpt-4o
 
 # Ollama (local)
-python screen.py alert.eml --default --provider ollama --model llama3
+pubmed-screener pubmed.eml --default --provider ollama --model llama3
 ```
 
 You can also set `LLM_PROVIDER` and `LLM_MODEL` as environment variables.

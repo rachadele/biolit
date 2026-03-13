@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pubmed-screener"
+version = "0.1.0"
+description = "Screen PubMed alert emails for relevant papers and extract structured summaries using an LLM."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Rachel Schwartz", email = "raschwaaa@gmail.com" }
+]
+requires-python = ">=3.8"
+keywords = ["pubmed", "literature-review", "llm", "bioinformatics", "genomics"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "anthropic",
+    "requests",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+openai = ["openai"]
+fulltext = ["lxml", "pdfminer.six"]
+all = ["openai", "lxml", "pdfminer.six"]
+
+[project.scripts]
+pubmed-screener = "pubmed_screener.cli:main"
+
+[project.urls]
+Repository = "https://github.com/rachadele/lit-search-agent"
