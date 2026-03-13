@@ -1,0 +1,256 @@
+"""Integration tests for the full pipeline, with all network and LLM calls mocked.
+
+This lets the pipeline run end-to-end without credentials or internet access.
+Replace the stub .eml fixture with your real alert file when you have one.
+"""
+import csv
+import json
+import pathlib
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from pubmed_screener.llm.base import BaseLLMClient
+from pubmed_screener.pipeline import run, build_output_schema, screen_paper, extract_fields
+
+FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
+
+
+# ---------------------------------------------------------------------------
+# Fake LLM client
+# ---------------------------------------------------------------------------
+
+class FakeLLMClient(BaseLLMClient):
+    """Deterministic LLM that returns scripted JSON responses in sequence."""
+
+    def __init__(self, responses: list[str]):
+        super().__init__(model="fake-model")
+        self._responses = list(responses)
+        self._index = 0
+        self.calls: list[list[dict]] = []
+
+    def chat(self, messages: list[dict], max_tokens: int = 512) -> str:
+        self.calls.append(messages)
+        if self._index >= len(self._responses):
+            return "{}"
+        resp = self._responses[self._index]
+        self._index += 1
+        return resp
+
+
+# ---------------------------------------------------------------------------
+# Fake metadata returned by fetch_pubmed_metadata
+# ---------------------------------------------------------------------------
+
+FAKE_PAPER_1 = {
+    "pmid": "11111111",
+    "doi": "10.1038/s41588-026-01234-5",
+    "title": "Genome-wide association study of schizophrenia in a European cohort",
+    "abstract": "GWAS of schizophrenia in 130,000 individuals identified 47 loci.",
+    "mesh_terms": ["Schizophrenia", "Genome-Wide Association Study"],
+    "url": "https://pubmed.ncbi.nlm.nih.gov/11111111/",
+    "fulltext_xml": None,
+    "fulltext_pdf": None,
+}
+
+FAKE_PAPER_2 = {
+    "pmid": "22222222",
+    "doi": "10.1016/j.biopsych.2026.01.005",
+    "title": "Transcriptomic profiling of prefrontal cortex in schizophrenia",
+    "abstract": "scRNA-seq of 200,000 nuclei from schizophrenia patients and controls.",
+    "mesh_terms": ["Schizophrenia", "Transcriptome", "Prefrontal Cortex"],
+    "url": "https://pubmed.ncbi.nlm.nih.gov/22222222/",
+    "fulltext_xml": None,
+    "fulltext_pdf": None,
+}
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for individual pipeline functions
+# ---------------------------------------------------------------------------
+
+class TestBuildOutputSchema:
+    def test_returns_dict_with_expected_keys(self):
+        schema_json = '{"methodology": "method used", "summary": "brief summary"}'
+        client = FakeLLMClient([schema_json])
+        result = build_output_schema(client, "methodology, summary")
+        assert isinstance(result, dict)
+        assert "methodology" in result
+        assert "summary" in result
+        assert len(client.calls) == 1
+
+    def test_passes_fields_in_prompt(self):
+        client = FakeLLMClient(['{"foo": "bar"}'])
+        build_output_schema(client, "foo")
+        prompt_text = client.calls[0][0]["content"]
+        assert "foo" in prompt_text
+
+
+class TestScreenPaper:
+    def test_returns_relevant_true(self, sample_pubmed_metadata):
+        response = '{"relevant": true, "reason": "Uses GWAS to study schizophrenia."}'
+        client = FakeLLMClient([response])
+        result = screen_paper(client, sample_pubmed_metadata, "Is this about schizophrenia genomics?", "abstract text")
+        assert result["relevant"] is True
+        assert "reason" in result
+
+    def test_returns_relevant_false(self, sample_pubmed_metadata):
+        response = '{"relevant": false, "reason": "Not about schizophrenia."}'
+        client = FakeLLMClient([response])
+        result = screen_paper(client, sample_pubmed_metadata, "Any criterion", "abstract text")
+        assert result["relevant"] is False
+
+    def test_prompt_includes_title_and_criterion(self, sample_pubmed_metadata):
+        client = FakeLLMClient(['{"relevant": true, "reason": "ok"}'])
+        screen_paper(client, sample_pubmed_metadata, "MY CRITERION", "some text")
+        prompt = client.calls[0][0]["content"]
+        assert "MY CRITERION" in prompt
+        assert sample_pubmed_metadata["title"] in prompt
+
+
+class TestExtractFields:
+    def test_returns_dict_with_schema_keys_and_metadata(self, sample_pubmed_metadata):
+        schema = {"methodology": "method", "summary": "summary"}
+        response = '{"methodology": "GWAS", "summary": "Large GWAS study."}'
+        client = FakeLLMClient([response])
+        result = extract_fields(client, sample_pubmed_metadata, schema, "text")
+        assert result["methodology"] == "GWAS"
+        assert result["title"] == sample_pubmed_metadata["title"]
+        assert result["pmid"] == sample_pubmed_metadata["pmid"]
+        assert result["url"] == sample_pubmed_metadata["url"]
+
+    def test_null_fields_preserved(self, sample_pubmed_metadata):
+        schema = {"rare_field": "something obscure"}
+        response = '{"rare_field": null}'
+        client = FakeLLMClient([response])
+        result = extract_fields(client, sample_pubmed_metadata, schema, "text")
+        assert result["rare_field"] is None
+
+
+# ---------------------------------------------------------------------------
+# Full end-to-end pipeline integration test
+# ---------------------------------------------------------------------------
+
+class TestPipelineRun:
+    """Run the complete pipeline with mocked network calls and a fake LLM."""
+
+    def _make_client(self, paper1_relevant=True, paper2_relevant=False):
+        """Build a FakeLLMClient with canned responses for a 2-paper run."""
+        schema_resp = '{"methodology": "experimental method", "summary": "brief summary"}'
+        screen_1 = json.dumps({"relevant": paper1_relevant, "reason": "Matches criterion."})
+        screen_2 = json.dumps({"relevant": paper2_relevant, "reason": "Does not match."})
+        extract_1 = '{"methodology": "GWAS", "summary": "Large GWAS of schizophrenia."}'
+        # If paper2 is relevant too, add extraction response
+        responses = [schema_resp, screen_1]
+        if paper1_relevant:
+            responses.append(extract_1)
+        responses.append(screen_2)
+        if paper2_relevant:
+            responses.append('{"methodology": "scRNA-seq", "summary": "Transcriptomics study."}')
+        return FakeLLMClient(responses)
+
+    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    def test_one_relevant_paper_writes_csv(self, mock_fetch, eml_path, tmp_path):
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        client = self._make_client(paper1_relevant=True, paper2_relevant=False)
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            eml_path=str(eml_path),
+            criterion="Is this about schizophrenia genomics?",
+            fields_description="methodology, summary",
+            output_path=str(output),
+            fulltext=False,
+        )
+
+        assert output.exists(), "CSV output file should be created"
+        rows = list(csv.DictReader(output.open()))
+        assert len(rows) == 1
+        assert rows[0]["pmid"] == "11111111"
+        assert rows[0]["methodology"] == "GWAS"
+        assert rows[0]["text_source"] == "abstract"
+
+    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    def test_no_relevant_papers_no_csv(self, mock_fetch, eml_path, tmp_path):
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        schema_resp = '{"methodology": "method"}'
+        screen_resp = '{"relevant": false, "reason": "Nope."}'
+        client = FakeLLMClient([schema_resp, screen_resp, screen_resp])
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            eml_path=str(eml_path),
+            criterion="Unrelated criterion",
+            fields_description="methodology",
+            output_path=str(output),
+            fulltext=False,
+        )
+
+        assert not output.exists(), "CSV should not be created when no papers are relevant"
+
+    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    def test_fetch_error_is_skipped_gracefully(self, mock_fetch, eml_path, tmp_path):
+        mock_fetch.side_effect = [Exception("Network error"), FAKE_PAPER_2]
+        schema_resp = '{"methodology": "method"}'
+        screen_resp = '{"relevant": false, "reason": "Nope."}'
+        client = FakeLLMClient([schema_resp, screen_resp])
+        output = tmp_path / "results.csv"
+
+        # Should not raise even though the first fetch fails
+        run(
+            client=client,
+            eml_path=str(eml_path),
+            criterion="Any",
+            fields_description="methodology",
+            output_path=str(output),
+            fulltext=False,
+        )
+
+    @patch("pubmed_screener.pipeline.fetch_pmc_fulltext")
+    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    def test_fulltext_pmc_used_when_available(self, mock_fetch, mock_pmc, eml_path, tmp_path, sample_jats_xml):
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        # First paper has PMC full text; second does not
+        mock_pmc.side_effect = [sample_jats_xml, None]
+
+        schema_resp = '{"methodology": "method", "summary": "summary"}'
+        screen_1 = '{"relevant": true, "reason": "Matches."}'
+        extract_1 = '{"methodology": "GWAS", "summary": "Full text study."}'
+        screen_2 = '{"relevant": false, "reason": "No."}'
+        client = FakeLLMClient([schema_resp, screen_1, extract_1, screen_2])
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            eml_path=str(eml_path),
+            criterion="Is this about schizophrenia?",
+            fields_description="methodology, summary",
+            output_path=str(output),
+            fulltext=True,
+        )
+
+        assert output.exists()
+        rows = list(csv.DictReader(output.open()))
+        assert len(rows) == 1
+        assert rows[0]["text_source"] == "pmc_fulltext"
+
+    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    def test_csv_contains_required_columns(self, mock_fetch, eml_path, tmp_path):
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        client = self._make_client(paper1_relevant=True, paper2_relevant=False)
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            eml_path=str(eml_path),
+            criterion="Any",
+            fields_description="methodology, summary",
+            output_path=str(output),
+            fulltext=False,
+        )
+
+        reader = csv.DictReader(output.open())
+        assert set(["title", "url", "pmid", "text_source"]).issubset(set(reader.fieldnames))
+
