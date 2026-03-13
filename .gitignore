@@ -8,3 +8,6 @@ __pycache__/
 CLAUDE.md
 *-instructions.md
 *-notes.md
+output/
+run_*/
+.idea*

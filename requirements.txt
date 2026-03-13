@@ -1,3 +1,11 @@
+# Core
 anthropic
 requests
 python-dotenv
+
+# Optional LLM providers (install whichever you need)
+openai           # for --provider openai
+
+# Full-text parsing
+lxml             # fast JATS XML parsing (parse_jats_sections)
+pdfminer.six     # PDF text extraction (parse_pdf_sections)
