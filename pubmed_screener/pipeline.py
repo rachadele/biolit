@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime
 
+from pubmed_screener.fetchers.geo import fetch_geo_record
 from pubmed_screener.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext
 from pubmed_screener.fetchers.preprints import fetch_preprint
 from pubmed_screener.fetchers.unpaywall import fetch_via_unpaywall
@@ -252,6 +253,109 @@ def run(
         writer.writerows(results)
 
     print(f"\nWrote {len(results)} relevant papers to {csv_path}")
+
+
+def run_geo(
+    client: BaseLLMClient,
+    accessions: list[str],
+    criterion: str,
+    fields_description: str,
+    output_path: str,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> None:
+    """Run the screening + extraction pipeline on a list of GEO accessions.
+
+    Each GEO record's summary and overall-design text is used in place of an
+    abstract. Full-text fetching is not applicable — the record text IS the
+    content. The output CSV has the same structure as the PubMed pipeline.
+    """
+    # Step 1: translate field names into a schema
+    print("Building output schema...")
+    output_schema = build_output_schema(client, fields_description)
+    print(f"  Fields: {', '.join(output_schema.keys())}\n")
+
+    print(f"Processing {len(accessions)} GEO accessions\n")
+
+    run_dir, csv_path = _make_run_dir(output_path)
+    artifacts_root = os.path.join(run_dir, "artifacts")
+    os.makedirs(artifacts_root, exist_ok=True)
+    print(f"Run directory: {run_dir}\n")
+
+    results = []
+    for i, accession in enumerate(accessions, 1):
+        print(f"[{i}/{len(accessions)}] {accession}", end=" ... ", flush=True)
+
+        try:
+            paper = fetch_geo_record(accession)
+        except Exception as e:
+            print(f"fetch error: {e}")
+            continue
+
+        if not paper:
+            print("skipped (not found)")
+            continue
+
+        text = paper.get("abstract", "")
+        if len(text) > max_chars:
+            text = text[:max_chars]
+
+        paper_slug = f"{accession}_{_safe_name(paper.get('title', 'record'))}"
+        paper_dir = os.path.join(artifacts_root, paper_slug)
+        os.makedirs(paper_dir, exist_ok=True)
+        _write_text(os.path.join(paper_dir, "selected_text.txt"), text)
+        _write_text(
+            os.path.join(paper_dir, "metadata.json"),
+            json.dumps(
+                {
+                    "accession": accession,
+                    "title": paper.get("title"),
+                    "url": paper.get("url"),
+                    "pmids": paper.get("pmids", []),
+                    "text_source": paper.get("text_source"),
+                },
+                indent=2,
+            ),
+        )
+
+        if not text:
+            print("skipped (no content)")
+            continue
+
+        try:
+            screening = screen_paper(client, paper, criterion, text)
+        except Exception as e:
+            print(f"screening error: {e}")
+            continue
+
+        if not screening.get("relevant"):
+            print(f"not relevant ({screening.get('reason', '')})")
+            continue
+
+        print("relevant — extracting fields")
+
+        try:
+            result = extract_fields(client, paper, output_schema, text)
+            result.pop("pmid", None)  # accession is the identifier for GEO records
+            result["geo_accession"] = accession
+            result["pmids"] = ", ".join(paper.get("pmids", []))
+            results.append(result)
+        except Exception as e:
+            print(f"  extraction error: {e}")
+
+    if not results:
+        print("\nNo relevant records found.")
+        return
+
+    priority = ["title", "url", "geo_accession", "pmids", "doi", "text_source"]
+    all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
+    fieldnames = priority + [k for k in all_keys if k not in priority]
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(results)
+
+    print(f"\nWrote {len(results)} relevant records to {csv_path}")
 
 
 def _safe_name(value: str) -> str:

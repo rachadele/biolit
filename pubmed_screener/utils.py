@@ -40,6 +40,17 @@ def extract_pmids(body: str) -> list[str]:
     return unique
 
 
+def read_geo_file(path: str) -> list[str]:
+    """Read a plain-text file of GEO accessions (one per line, comments ignored)."""
+    accessions = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                accessions.append(line)
+    return accessions
+
+
 def read_pmids_file(path: str) -> list[str]:
     """Read a plain-text file of PMIDs (one per line, comments and blanks ignored)."""
     pmids = []

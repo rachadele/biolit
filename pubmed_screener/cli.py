@@ -6,9 +6,9 @@ import sys
 from dotenv import load_dotenv
 
 from pubmed_screener.llm import get_llm_client
-from pubmed_screener.pipeline import run
+from pubmed_screener.pipeline import run, run_geo
 from pubmed_screener.parsers.utils import DEFAULT_MAX_CHARS
-from pubmed_screener.utils import read_eml_body, extract_pmids, read_pmids_file
+from pubmed_screener.utils import read_eml_body, extract_pmids, read_pmids_file, read_geo_file
 
 load_dotenv()
 
@@ -111,37 +111,69 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Using LLM: {client}\n")
 
-    # Resolve input to a list of PMIDs
+    # Resolve input type and dispatch to the appropriate pipeline
     if args.input_file.endswith(".eml"):
         body = read_eml_body(args.input_file)
         pmids = extract_pmids(body)
         print(f"Found {len(pmids)} PMIDs in {args.input_file}\n")
+        input_type = "pubmed"
     else:
-        pmids = read_pmids_file(args.input_file)
-        print(f"Read {len(pmids)} PMIDs from {args.input_file}\n")
+        # Peek at the first non-comment line to detect GEO vs PMID list
+        first_value = _peek_first_value(args.input_file)
+        if first_value and first_value.upper().startswith(("GSE", "GDS", "GSM", "GPL")):
+            input_type = "geo"
+        else:
+            input_type = "pubmed"
 
-    if not pmids:
-        print("No PMIDs found. Exiting.")
-        sys.exit(1)
+    if input_type == "geo":
+        accessions = read_geo_file(args.input_file)
+        print(f"Read {len(accessions)} GEO accessions from {args.input_file}\n")
+        if not accessions:
+            print("No accessions found. Exiting.")
+            sys.exit(1)
+        run_geo(
+            client=client,
+            accessions=accessions,
+            criterion=criterion,
+            fields_description=fields,
+            output_path=args.output,
+            max_chars=args.max_chars,
+        )
+    else:
+        if args.input_file.endswith(".eml"):
+            pass  # pmids already set above
+        else:
+            pmids = read_pmids_file(args.input_file)
+            print(f"Read {len(pmids)} PMIDs from {args.input_file}\n")
+        if not pmids:
+            print("No PMIDs found. Exiting.")
+            sys.exit(1)
+        sections_wanted = (
+            [s.strip() for s in args.sections.split(",") if s.strip()]
+            if args.sections
+            else None
+        )
+        run(
+            client=client,
+            pmids=pmids,
+            criterion=criterion,
+            fields_description=fields,
+            output_path=args.output,
+            fulltext=args.fulltext,
+            unpaywall_email=args.unpaywall_email,
+            sections_wanted=sections_wanted,
+            max_chars=args.max_chars,
+        )
 
-    # Sections filter
-    sections_wanted = (
-        [s.strip() for s in args.sections.split(",") if s.strip()]
-        if args.sections
-        else None
-    )
 
-    run(
-        client=client,
-        pmids=pmids,
-        criterion=criterion,
-        fields_description=fields,
-        output_path=args.output,
-        fulltext=args.fulltext,
-        unpaywall_email=args.unpaywall_email,
-        sections_wanted=sections_wanted,
-        max_chars=args.max_chars,
-    )
+def _peek_first_value(path: str) -> str | None:
+    """Return the first non-blank, non-comment line of a file."""
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                return line
+    return None
 
 
 if __name__ == "__main__":
