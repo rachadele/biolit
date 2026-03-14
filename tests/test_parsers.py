@@ -1,8 +1,8 @@
 """Unit tests for the JATS XML and section-selection parsers."""
 import pytest
 
-from pubmed_screener.parsers.jats import parse_jats_sections
-from pubmed_screener.parsers.utils import select_sections
+from biolit.parsers.jats import parse_jats_sections
+from biolit.parsers.utils import select_sections
 
 
 class TestParseJatsSections:

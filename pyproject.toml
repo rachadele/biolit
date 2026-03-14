@@ -3,16 +3,16 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pubmed-screener"
+name = "biolit"
 version = "0.1.0"
-description = "Screen PubMed alert emails for relevant papers and extract structured summaries using an LLM."
+description = "LLM-assisted biomedical literature screening and structured extraction for PubMed and GEO."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
     { name = "Rachel Schwartz", email = "raschwaaa@gmail.com" }
 ]
 requires-python = ">=3.8"
-keywords = ["pubmed", "literature-review", "llm", "bioinformatics", "genomics"]
+keywords = ["pubmed", "geo", "literature-review", "llm", "bioinformatics", "genomics", "mcp"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pubmed-screener = "pubmed_screener.cli:main"
+biolit = "biolit.cli:main"
 
 [project.urls]
 Repository = "https://github.com/rachadele/lit-search-agent"

@@ -29,7 +29,7 @@ def test1_eml_path() -> pathlib.Path:
 def sample_pubmed_metadata():
     """A minimal paper metadata dict as returned by fetch_pubmed_metadata."""
     return {
-        "pmid": "11111111",
+        "pmid": "41795042",
         "doi": "10.1038/s41588-026-01234-5",
         "title": "Genome-wide association study of schizophrenia in a European cohort",
         "abstract": (
@@ -38,7 +38,7 @@ def sample_pubmed_metadata():
             "47 genome-wide significant loci and implicated synaptic genes."
         ),
         "mesh_terms": ["Schizophrenia", "Genome-Wide Association Study", "Genomics"],
-        "url": "https://pubmed.ncbi.nlm.nih.gov/11111111/",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/41795042/",
         "fulltext_xml": None,
         "fulltext_pdf": None,
     }

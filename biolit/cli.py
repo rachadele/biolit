@@ -1,13 +1,14 @@
-"""CLI entry point for pubmed-screener."""
+"""CLI entry point for biolit."""
 import argparse
 import os
 import sys
 
 from dotenv import load_dotenv
 
-from pubmed_screener.llm import get_llm_client
-from pubmed_screener.pipeline import run
-from pubmed_screener.parsers.utils import DEFAULT_MAX_CHARS
+from biolit.llm import get_llm_client
+from biolit.pipeline import run, run_geo
+from biolit.parsers.utils import DEFAULT_MAX_CHARS
+from biolit.utils import read_eml_body, extract_pmids, read_pmids_file, read_geo_file
 
 load_dotenv()
 
@@ -25,7 +26,18 @@ def main(argv: list[str] | None = None) -> None:
             "Supports multiple LLM providers and optional full-text fetching."
         )
     )
-    parser.add_argument("eml_file", help="Path to the PubMed alert .eml file")
+    parser.add_argument(
+        "input_file", nargs="?", default=None,
+        help="PubMed alert .eml file, plain-text file of PMIDs, or plain-text file of GEO accessions",
+    )
+    parser.add_argument(
+        "--pmids", default=None,
+        help="Comma-separated PMIDs (alternative to input_file)",
+    )
+    parser.add_argument(
+        "--accessions", default=None,
+        help="Comma-separated GEO accessions (alternative to input_file)",
+    )
 
     # Screening / extraction
     parser.add_argument("--criterion", default=None,
@@ -107,24 +119,77 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Using LLM: {client}\n")
 
-    # Sections filter
-    sections_wanted = (
-        [s.strip() for s in args.sections.split(",") if s.strip()]
-        if args.sections
-        else None
-    )
+    # Resolve input — CLI flags take priority over file
+    if not args.input_file and not args.pmids and not args.accessions:
+        print("Error: provide an input_file, --pmids, or --accessions.")
+        sys.exit(1)
 
-    run(
-        client=client,
-        eml_path=args.eml_file,
-        criterion=criterion,
-        fields_description=fields,
-        output_path=args.output,
-        fulltext=args.fulltext,
-        unpaywall_email=args.unpaywall_email,
-        sections_wanted=sections_wanted,
-        max_chars=args.max_chars,
-    )
+    if args.accessions:
+        input_type = "geo"
+        accessions = [a.strip() for a in args.accessions.split(",") if a.strip()]
+        print(f"Using {len(accessions)} GEO accessions from --accessions\n")
+    elif args.pmids:
+        input_type = "pubmed"
+        pmids = [p.strip() for p in args.pmids.split(",") if p.strip()]
+        print(f"Using {len(pmids)} PMIDs from --pmids\n")
+    elif args.input_file.endswith(".eml"):
+        input_type = "pubmed"
+        body = read_eml_body(args.input_file)
+        pmids = extract_pmids(body)
+        print(f"Found {len(pmids)} PMIDs in {args.input_file}\n")
+    else:
+        first_value = _peek_first_value(args.input_file)
+        if first_value and first_value.upper().startswith(("GSE", "GDS", "GSM", "GPL")):
+            input_type = "geo"
+            accessions = read_geo_file(args.input_file)
+            print(f"Read {len(accessions)} GEO accessions from {args.input_file}\n")
+        else:
+            input_type = "pubmed"
+            pmids = read_pmids_file(args.input_file)
+            print(f"Read {len(pmids)} PMIDs from {args.input_file}\n")
+
+    if input_type == "geo":
+        if not accessions:
+            print("No accessions found. Exiting.")
+            sys.exit(1)
+        run_geo(
+            client=client,
+            accessions=accessions,
+            criterion=criterion,
+            fields_description=fields,
+            output_path=args.output,
+            max_chars=args.max_chars,
+        )
+    else:
+        if not pmids:
+            print("No PMIDs found. Exiting.")
+            sys.exit(1)
+        sections_wanted = (
+            [s.strip() for s in args.sections.split(",") if s.strip()]
+            if args.sections
+            else None
+        )
+        run(
+            client=client,
+            pmids=pmids,
+            criterion=criterion,
+            fields_description=fields,
+            output_path=args.output,
+            fulltext=args.fulltext,
+            unpaywall_email=args.unpaywall_email,
+            sections_wanted=sections_wanted,
+            max_chars=args.max_chars,
+        )
+
+
+def _peek_first_value(path: str) -> str | None:
+    """Return the first non-blank, non-comment line of a file."""
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                return line
+    return None
 
 
 if __name__ == "__main__":

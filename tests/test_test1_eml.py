@@ -5,7 +5,7 @@ HTML-format alert email from NCBI. They do NOT call the network or any LLM.
 """
 import pathlib
 
-from pubmed_screener.utils import read_eml_body, extract_pmids
+from biolit.utils import read_eml_body, extract_pmids
 from tests.conftest import TEST1_PMIDS
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"

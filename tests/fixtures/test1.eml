@@ -1,0 +1,1222 @@
+Delivered-To: raschwaa@gmail.com
+Received: by 2002:a05:7022:6198:b0:127:844:4aa1 with SMTP id n24csp2248578dln;
+        Tue, 10 Mar 2026 15:46:16 -0700 (PDT)
+X-Forwarded-Encrypted: i=3; AJvYcCVbGIff25KVPe0lv/Sra1YC5C5Thlh1p/LFpuOB3F4TBzJXjxOjzvgi023xe2cs6vk2GfsXAZOfow==@gmail.com
+X-Received: by 2002:a05:6a21:700d:b0:398:90e5:a98a with SMTP id adf61e73a8af0-398c5ed4bc2mr223219637.17.1773182776496;
+        Tue, 10 Mar 2026 15:46:16 -0700 (PDT)
+ARC-Seal: i=2; a=rsa-sha256; t=1773182776; cv=pass;
+        d=google.com; s=arc-20240605;
+        b=bdIcxoootECDGS/LYFDpkUI6o9YiQf7nhkgGf78GMLF9hjEWsaK4WwNC0qeZEyiDJk
+         5NwOqVno1baHxJ0lRaW+/knxxKk1geXdsiQvA1aSZuy2SN/3kX4HAyBgOH/3z//WwXbd
+         b0mNWfBaA7KO+z8qN9y4T7yEXVx8DXmuQkNUkTuViGVpI5i35Et+dq/w8wdsyb3afipo
+         iar5Ea3eLj1TYJ/uhJ2Q8eTNqYfCc3lhOWlEdGIfeBuW/zGraCu6leGLD3+iJcZF5L/k
+         KCAo601aUuCKxnRcwoy3a47QcPKaxgH5v/ZEZkyhe/SIBrLiQEvp32reLyuO2uKWVpNw
+         elgQ==
+ARC-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=mime-version:auto-submitted:resent-from:user-agent:content-language
+         :in-reply-to:references:message-id:date:thread-index:thread-topic
+         :subject:to:from:dkim-signature:ironport-hdrordr:ironport-data
+         :dkim-signature;
+        bh=xI6nE/cUqvLVz8WazFtGDCFQ0b3aIaqwmvH3SuQWtSU=;
+        fh=SQFCOiUQz8nCo+bVS69+enQorcaeGVOpt7k0Crb9bHY=;
+        b=QHwS+/JiW4UAY0Ku4jklZp9DzpvSo4k6Dr9axPwcutRiFyZsGQwDPgEQnRyqSiEy4t
+         4dSj6sxJe+tAH8FzCOBWATc2tcpn7P0NSqxq8u26zkkdzy4f7cw461KF+jSn3vEVKyri
+         GflOq5MHl9FZi9AgtYThnK2AOCK3fWhXSV2JkjCTBu9Yf32GjOHcr4NIwwzVyG1GM/pn
+         MDkZQtWZsPD5GE73YRcBNPV7QRnVdftWejVLKX+XSeEGF5ti6rDQfZx/cQ0s7nTNOSS0
+         LzT0WyZVhGnpBLQtqtGkuLHiOap/+8x2SYyND27FYvl7Arxt12pw9Mjk86mTDWLNC/Py
+         J9EQ==;
+        dara=google.com
+ARC-Authentication-Results: i=2; mx.google.com;
+       dkim=pass header.i=@ubc.ca header.s=s1 header.b=T+jTLXUV;
+       dkim=pass header.i=@ubcca.onmicrosoft.com header.s=selector2-ubcca-onmicrosoft-com header.b="B0zu/zLZ";
+       arc=pass (i=1 spf=pass spfdomain=student.ubc.ca dkim=pass dkdomain=msl.ubc.ca dmarc=pass fromdomain=msl.ubc.ca);
+       spf=pass (google.com: domain of raschwar@student.ubc.ca designates 142.103.203.6 as permitted sender) smtp.mailfrom=raschwar@student.ubc.ca;
+       dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE) header.from=msl.ubc.ca
+Return-Path: <raschwar@student.ubc.ca>
+Received: from esvaout11.mail-relay.ubc.ca (esvaout11.mail-relay.ubc.ca. [142.103.203.6])
+        by mx.google.com with ESMTPS id 41be03b00d2f7-c73cdfc8831si546508a12.245.2026.03.10.15.46.16
+        for <raschwaa@gmail.com>
+        (version=TLS1_2 cipher=ECDHE-ECDSA-CHACHA20-POLY1305 bits=256/256);
+        Tue, 10 Mar 2026 15:46:16 -0700 (PDT)
+Received-SPF: pass (google.com: domain of raschwar@student.ubc.ca designates 142.103.203.6 as permitted sender) client-ip=142.103.203.6;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@ubc.ca header.s=s1 header.b=T+jTLXUV;
+       dkim=pass header.i=@ubcca.onmicrosoft.com header.s=selector2-ubcca-onmicrosoft-com header.b="B0zu/zLZ";
+       arc=pass (i=1 spf=pass spfdomain=student.ubc.ca dkim=pass dkdomain=msl.ubc.ca dmarc=pass fromdomain=msl.ubc.ca);
+       spf=pass (google.com: domain of raschwar@student.ubc.ca designates 142.103.203.6 as permitted sender) smtp.mailfrom=raschwar@student.ubc.ca;
+       dmarc=pass (p=QUARANTINE sp=QUARANTINE dis=NONE) header.from=msl.ubc.ca
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+  d=ubc.ca; i=@ubc.ca; q=dns/txt; s=s1; t=1773182777;
+  x=1804718777;
+  h=from:to:subject:date:message-id:references:in-reply-to:
+   resent-from:mime-version;
+  bh=xI6nE/cUqvLVz8WazFtGDCFQ0b3aIaqwmvH3SuQWtSU=;
+  b=T+jTLXUVVZOYsTgx6yLSKYXAeY7nNEJ4B20kok0p6Vd1mGPprbSTZF4I
+   aMmS8xiKpr/bac7gNUCIJIVXL7xy0bzwBwN/+/Nog9RY1jzJxLBuQC90E
+   JA5JVijVWPZNWQFVOzxrB1F04jV4SI+ExgQ/yllU4dVZ+P2QKEdE963eu
+   qNQGqwNAd+ScBlxD+8KBIUdkka6fN0yYkUA3WuJJiAoFDSEFg4cULPH+n
+   xu6ZddNweybDSXIIP1Q9C6j1E0jXMACXoIlFyiSXgK21QIZJC4ICFaJHv
+   EgiMnfIO1KAe2obnZfpDIZiCdLPh0HQpxjIyDmR7epuZ0neR+AS9j31ue
+   g==;
+X-CSE-ConnectionGUID: csrg5rviRoWDVl0/WMtC1A==
+X-CSE-MsgGUID: l0YL9CjqSnWLWC4O10q7GA==
+X-ExtLoop1: 1
+X-SMTPAUTH: FALSE
+IronPort-Data: A9a23:69A7ma1eXnq5mHA+WvbD5YVwkn2cJEfYwER7XKvMYLTBsI5bpwWzt
+ Nbm7RIywEv2EmDwS237GIy29Xqy2ebUyMhjVgNyrSg8J55zgZKtLcyDKUvtND+lIMTGTUZ2h
+ +0TcdCowPocFxcwnT/zdOGwxZVA/fvQHOelUbeUYnkZqTJME0/Ntzoyw4bVvaY12bBVMyvV0
+ fvursvWPkOS2jIcGgo896KZpRpzi+/5sTUes0ZWTagjUIj2ziZ94Do3fMldHlOgKmVmNrfSq
+ 9XrldlVyljkEyIFV7tJpJ6mKBFQEu6KZWBivVINM0SqqkAqSiXfSc/XPtJEAatco2zhc9ycU
+ 7yhHHF/IOskFvSkpQgTb/VXOyplJ6Ib4qHGG3+AnfKXlwr5VmfHmtw7WSnaPaVAkgp2KXpL6
+ eReLTkMalaejenwy7vTputE35xlcJStZt9Z6y4IITLxVJ7KRbjZSr7B5cBRxh8rmt1CEPDCI
+ dcTYnxkZXwsZjUWZApPVsJizb/Aan/Xd2VpjAO+p7MM5Vf38yct9+G1KYX6U4nfLSlStgPCz
+ o7cxEzjCwoRNMOWwBKK93utgqnEmiaTZW4JPLmy7vFujkaYnjUcEwEODQL+rP+lkRbnHtwCb
+ lIO9CUqsKV3+kisR8W7RAyjvHOBpVgdR5xNGeZ84wjlJrfo3jt1z1MsFlZpAOHKfudqLdD2/
+ jdlVO8FydCiXHN5hJ5dGnqpQeuOBBUo
+IronPort-HdrOrdr: A9a23:Ue1B06xET2lgqIokldzFKrPxk+gkLtp133Aq2lEZdPULSKOlfp
+ GV8MjziyWYtN9jYgBbpTngAtjefZq4z/BICOYqTNGftWXdyQiVxcRZnPDfKl7banPDH4xmpN
+ 5dmsFFYbWaZzkbsS+52njBLz7bqOP3tZxA7d2u5kuFJjsaDp2Imj0JbTpzZXcGIDWua6BJdq
+ a0145qtjCgcXMYYoCBAGUZX+/MntvPlJj3Sx8LDRwq5WC1/GKVwY+/NyLd8gYVUjtJz7tn23
+ PCiRbF6qKqtOz+4gPA1kfIhq4myOfJ+59mPoihm8IVIjLjhkKDf4J6QYCPuzgzvaWG9Esqqt
+ /RuB0tVv4DuE85P1vF8ycF6TOQhArG2EWSnmNwtEGT9PAQHloBerZ8bMxiA03kAgEbzaxBOe
+ pwrh2kXtxsfDv9dW3Glqb1v0QDrDvynZJp+9Rj/kC2DuElGcxshJ1a80VPHJgaGiXmrIghDe
+ l1FcnZoO1baFWAchnizx9S6c3pUXIpAB+cT0QO/siYySJfknw8z0Zw/r1uop4szuNLd3B/3Z
+ WfDo140LVVCsMGZ6N0A+kMBcO9EyjCXRLAWVjiaGjPBeUCITbAupT36LI66KWjf4EJ1oI7nN
+ DEXElDvWA/dkryAYnWtac7rizlUSG4R3Dg28te7592tvn1Q6fqKzSKTBQrn9G7q/sSD8XHU7
+ K4OY5QAfXkMWzycLw5gjHWSt1XMz0TQccVstE0VxaHpd/KMJTjsqjBfPPaNNPWYG0Zc3K6Bm
+ FGUCn4Jc1G4EzuUGT/mgLNV3TkfVG69Y5sEaDBltJjgrQlJ8lJqEwYmF657saEJXlJqaotZl
+ ZzJ7vhj+eyuXS252DV9G9kUyAtRXq8qd3bIj93TXljCTK6TV4s0O/vN1y7nRO8V1dCp7S/Kn
+ 8Tm7xWkpjHbqB57UgZepSa2kvztQpWmJqOJ61s2JFrJf2VIq/Rff4dKexM/TmiLW03pe9Hkh
+ Y2VOcZLXWvTw8G05/V/qD8LNuvAuVBvA==
+X-Talos-CUID: 9a23:8JxfAW0gEr69wQuwxo7gELxfEds/fSDH0nbqJHCUN2IxD4KwVXTJ0fYx
+X-Talos-MUID: =?us-ascii?q?9a23=3ASD/bxw/W7g031AqFO074FvaQf8Mw0oD/I0IUqpM?=
+ =?us-ascii?q?5n/avaQspYy7Cox3iFw=3D=3D?=
+Received: from lbpglfsc01gstp01-ents01-f5-vrfglue-float.systems.it.ubc.ca (HELO smtp.mail.ubc.ca) ([10.45.24.97])
+  by esvaout11.mail-relay.ubc.ca with ESMTP/TLS/ECDHE-RSA-AES128-GCM-SHA256; 10 Mar 2026 15:46:17 -0700
+Received: from EXCH-SRV03BP.ead.ubc.ca (10.19.216.45) by
+ EXCH-SRV02BP.ead.ubc.ca (10.19.216.30) with Microsoft SMTP Server
+ (version=TLS1_2, cipher=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256) id
+ 15.1.2507.61; Tue, 10 Mar 2026 15:46:15 -0700
+Received: from YT6PR01CU002.outbound.protection.outlook.com (10.19.170.1) by
+ EXCH-SRV03BP.ead.ubc.ca (10.19.216.45) with Microsoft SMTP Server
+ (version=TLS1_2, cipher=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256) id
+ 15.1.2507.61 via Frontend Transport; Tue, 10 Mar 2026 15:46:15 -0700
+ARC-Seal: i=1; a=rsa-sha256; s=arcselector10001; d=microsoft.com; cv=none;
+ b=UyWSentvbfQDgEhy9pWrPjR0dZ9Fd/aUfA18bGhDPqap68prLxLcMJd0VMeoHd2F3iGvoykFnzYhXV9uw+n/7qE8xWzpC+rNcpQJsWhzksvibVMzr8UJOMH8EgEX1tUwcXt4Zv24CE9JFnt2ZMpzXVTOc4yaaAXkPnJH8M3FNAYhtihYlqrYtE488zzbSgaGQBoSnEAQdptqyuc54CTVcB3jZH0X66r9AbgZNX5380wl7bJ/YRv9b7hhP9NjrEW4WzvAclRMNMQougPu+87Vw7J65tIxN6Y8kit89GvJgugJq6xRg+4AcKo/9+Pt0hfoxMD/k9gLAEhVDH4Ru5GZ7g==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=microsoft.com;
+ s=arcselector10001;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-AntiSpam-MessageData-ChunkCount:X-MS-Exchange-AntiSpam-MessageData-0:X-MS-Exchange-AntiSpam-MessageData-1;
+ bh=xI6nE/cUqvLVz8WazFtGDCFQ0b3aIaqwmvH3SuQWtSU=;
+ b=qwqszw08lkPPvG8tMt1Qv197HH3L8zItgT7zae8osmo2DK0NTJR7GobOorLbfYwjXLyxnol6UqWUJ2NhWRJUUF3sv4uoqxH1bmcWn1+YHzeB7Ey8SEJEuKUTIZc5LZ5KZ+V/R/Uc/ieIoPHuwUDVlaNyexKkUTOP0Q8jGzdw79glfBP1M/nS30KK58GBR79Tv2VOWm3+6dFklQKrvxHQfOPFvhfKrkp7CiszoRH9SSIr4obgwfipNWUh6TAGhNhQOsoIN5zNXw15x13Lp6s1PM5firnXLClRGCvZBnXr8oVBeNAaal44d7uw6IFYxSfXGYeIXfLA1WG5H0VOH5BQoQ==
+ARC-Authentication-Results: i=1; mx.microsoft.com 1; spf=pass
+ smtp.mailfrom=student.ubc.ca; dmarc=pass action=none header.from=msl.ubc.ca;
+ dkim=pass header.d=msl.ubc.ca; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=ubcca.onmicrosoft.com;
+ s=selector2-ubcca-onmicrosoft-com;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-SenderADCheck;
+ bh=xI6nE/cUqvLVz8WazFtGDCFQ0b3aIaqwmvH3SuQWtSU=;
+ b=B0zu/zLZjiSRZF29FdI0CldXDaQJnh8ytoUpmP4xSs3DerD84VAh2sdMRakzKeu0SrfTI0b92eIN9e70kksQaKLwZGkWxen+8Thc9HEFdTJgQjXpx+TfSLLQR+2Dcga+YWC0eB1ErWrPUxHNyYLyQyBNxKGkeQTgGknAkTHoHYY=
+Received: from YQBPR0101MB6054.CANPRD01.PROD.OUTLOOK.COM
+ (2603:10b6:c01:35::22) by YT2PPF0DC9234B1.CANPRD01.PROD.OUTLOOK.COM
+ (2603:10b6:b08::40e) with Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.9700.11; Tue, 10 Mar
+ 2026 22:46:12 +0000
+Received: from YQBPR0101MB6054.CANPRD01.PROD.OUTLOOK.COM ([::1]) by
+ YQBPR0101MB6054.CANPRD01.PROD.OUTLOOK.COM ([fe80::a925:8e56:2d7a:2cbd%4])
+ with Microsoft SMTP Server id 15.20.9700.010; Tue, 10 Mar 2026 22:46:11 +0000
+From: "Pavlidis, Paul" <paul@msl.ubc.ca>
+To: "raschwar@student.ubc.ca" <raschwar@student.ubc.ca>
+Subject: Fwd: What's new for 'schizophrenia genomics' in PubMed
+Thread-Topic: What's new for 'schizophrenia genomics' in PubMed
+Thread-Index: AQHcsN+waZill2HX50yZPXAGiB67Gw==
+Date: Tue, 10 Mar 2026 22:46:06 +0000
+Message-ID: <6a9ddbb2955c4b8fb86776502fb4e5a5@YQBPR0101MB6054.CANPRD01.PROD.OUTLOOK.COM>
+References: <1010208531.256364.1772964585798@a90fe8f8cd80>
+In-Reply-To: <1010208531.256364.1772964585798@a90fe8f8cd80>
+Content-Language: en-CA
+X-MS-Has-Attach:
+X-MS-Exchange-Inbox-Rules-Loop: raschwar@student.ubc.ca
+X-MS-TNEF-Correlator:
+authentication-results: dkim=none (message not signed)
+ header.d=none;dmarc=none action=none header.from=msl.ubc.ca;
+user-agent: Mozilla Thunderbird
+x-forwarded-message-id: <1010208531.256364.1772964585798@a90fe8f8cd80>
+x-clientproxiedby: MW4PR04CA0138.namprd04.prod.outlook.com
+ (2603:10b6:303:84::23) To YT4PR01MB10760.CANPRD01.PROD.OUTLOOK.COM
+ (2603:10b6:b01:102::17)
+x-ms-publictraffictype: Email
+x-ms-traffictypediagnostic: YT4PR01MB10760:EE_|YT4PR01MB10644:EE_|YQBPR0101MB6054:EE_|YT2PPF0DC9234B1:EE_
+x-ms-office365-filtering-correlation-id: 63a8aedf-646f-4fc1-c1d4-08de7ef6d3d0
+x-microsoft-antispam: BCL:0;ARA:13230040|786006|1800799024|376014|10070799003|19092799006|14060799003|4022899009|366016|35042699022|8096899003|7142099003|22082099003|56012099003|18002099003;
+x-forefront-antispam-report: CIP:255.255.255.255;CTRY:;LANG:en;SCL:1;SRV:;IPV:NLI;SFV:NSPM;H:YQBPR0101MB6054.CANPRD01.PROD.OUTLOOK.COM;PTR:;CAT:NONE;SFS:(13230040)(786006)(1800799024)(376014)(10070799003)(19092799006)(14060799003)(4022899009)(366016)(35042699022)(8096899003)(7142099003)(22082099003)(56012099003)(18002099003);DIR:OUT;SFP:1102;
+x-ms-exchange-abp-guid: df11496e-be2b-434d-9d32-bc937c50332a
+x-ms-exchange-crosstenant-network-message-id: 3a45ac5b-3eba-4e1f-47a0-08de7ef6d0d0
+x-ms-exchange-crosstenant-authsource: YT4PR01MB10760.CANPRD01.PROD.OUTLOOK.COM
+x-ms-exchange-crosstenant-authas: Internal
+x-ms-exchange-crosstenant-originalarrivaltime: 10 Mar 2026 22:46:07.1614 (UTC)
+x-ms-exchange-crosstenant-fromentityheader: Hosted
+x-ms-exchange-crosstenant-id: 2fff08c9-91d4-4fc8-bbdd-dd59b7414ddb
+x-ms-exchange-crosstenant-mailboxtype: HOSTED
+x-ms-exchange-crosstenant-userprincipalname: k7e/ZdXwUZLMTigK0UGm520n4+YlWWgJRLvDQMl98t9nEGm6FsPEb2dP5rnQQntMhzUna1JMNK4Qj2Gi7gtb4A==
+x-ms-exchange-transport-crosstenantheadersstamped: YT4PR01MB10644
+x-ms-exchange-transport-endtoendlatency: 00:00:02.8680128
+x-ms-exchange-processed-by-bccfoldering: 15.20.9700.003
+Resent-From: <raschwar@student.ubc.ca>
+x-ms-exchange-parent-message-id: <489e878c-a55b-47c7-aa47-6c72be17c0c3@msl.ubc.ca>
+auto-submitted: auto-generated
+x-ms-exchange-generated-message-source: Mailbox Rules Agent
+x-ms-office365-filtering-correlation-id-prvs: 3a45ac5b-3eba-4e1f-47a0-08de7ef6d0d0
+x-ms-exchange-senderadcheck: 1
+x-ms-exchange-antispam-relay: 0
+x-microsoft-antispam-message-info: YydJ83XXRYmqgXKyUkDyUrvXSV8h8At8inkVKfarnyhrKNdF8YuwGigp2P+PVRkzgkxDNIs/J/Hp2QwdzfwC1H60N7GVh7ojsb/ZOFatAQhUEFdPztG0xtCgYDPN9tPNaO8q7fvrgcnE3jfNEYX7gZEj2lAjwri5SFw7Q+vjY0jSxexSQr4Zzxb/z3eqmOWX7xQ515mtHXdjF8oCT5Zr9PficbzRlDWotKvYRor4zMCto4g5MyxiFmrJyttd2FpYpjYUN4/NJpRILMbd2/lcW2G6/klzITce1TVpA4y+jt9ePKpX+CFnHb98Fd7x+LoIf8svmBJjV8htUisPOdEp7LIUg7RW4cvgSQhmeNo/SG1CrPSeOhjOI2fNUsRVBNEE3aOBJCi6/eYeVmqTSmw35nINQOgoIkAco6hTk/NrFGEFH/PUSHWqHCfsjTSOaIhwKm78U0ez6NxC2rPVpQalIxXLYLmcJls07u7sxoGqEatRb4sCtaW13EOgD+KnnjEeNgguKjzyRBkaOfxoBQI5o6U7wToFRDu5eSQCq2Tq3PE4lUrL7TkAubZLN/iGHaiUv8qCKg4X2hplomve3DBpsVO4X1HtdjApZpkgW26ZsaBVGJH+baw3UG5u9snK5aH8sM29QZn1VqO+u5u4zjJD7lV4Eg+c4u/ELn/rBAyTE+dCyO/tU2jhWfKhL01OsrAR
+x-ms-exchange-antispam-messagedata-chunkcount: 1
+x-ms-exchange-antispam-messagedata-0: MgdCBFqGebqlphswvinkGJgzGPEXhB9qIQo1MrXFAcnQKU5gQLZi5iSko/5LDb20ET/rmxyn4UHr4rn42rhIQO+cj4IbyrviUx7ay1rDIJHbiNsBeMk7AMI+ld4GiMdIH5MkShxcI7D8Fwhw7ZY96YV8b/NUSEC7bu0vmkUQbGIyUmV6BMBxeDvnOrCQDIfOotjfDlLljZktpPFQLUDHld/2sNQIbtUzPlq+ROI8vsHlqJQlzh9/MtdfyftE3WIhZLyM1VKpicOnUDA6bWKEDWAoD20qzB30G8h37BLjOadeDheU/9xWAEhmWJLYElnQa94u+Uqiwbm5kkoXYrIxYj0g6c+i8Tnowqf9AARFoWBsNKAhabHtDdHxz9JvH9+xzM5VUL3uMWJ8GGxB0J4N4pg4mVGwPro9uYdIMnDUYvr1/3LSql58AXsrg8/AvNrA
+Content-Type: multipart/alternative;
+	boundary="_000_6a9ddbb2955c4b8fb86776502fb4e5a5YQBPR0101MB6054CANPRD01_"
+MIME-Version: 1.0
+X-Exchange-RoutingPolicyChecked: qGTSdztlTp8RSIfs+uEBaKKzNLmDS5E/OqBOI4TnTrcHTGJw24Y7ITzZUOYLDa/T/Us2/08dOfKbjEhEmhwklr3X/mHWLGStnFGh4UESRb/S/amrJx9/QGMxvAP7cQA7RUmTLOlEHUuFawLfIpwRVcbgixV66+9O3+8yUlX+S1/3Y5/n28vqLQmJ17ybOTa+WBiIg/06ZImfW5b7ZBHeo50wOV53pQrWJaWD3JEPg0KktdGIQy0bOsGU8H4gV9/o+jPEUNH3jkFXEJtxYhWl5QfmGg4YqoBV3SBE/WdQ824Wad5tWxrVyFm3wqukYN3D/9EzWDYNpyk9S/eFIdwjtg==
+X-MS-Exchange-CrossTenant-AuthAs: Internal
+X-MS-Exchange-CrossTenant-AuthSource: YT4PR01MB10760.CANPRD01.PROD.OUTLOOK.COM
+X-MS-Exchange-CrossTenant-Network-Message-Id: 63a8aedf-646f-4fc1-c1d4-08de7ef6d3d0
+X-MS-Exchange-CrossTenant-originalarrivaltime: 10 Mar 2026 22:46:11.3247
+ (UTC)
+X-MS-Exchange-CrossTenant-fromentityheader: Hosted
+X-MS-Exchange-CrossTenant-id: 2fff08c9-91d4-4fc8-bbdd-dd59b7414ddb
+X-MS-Exchange-Transport-CrossTenantHeadersStamped: YT2PPF0DC9234B1
+Return-Path: raschwar@student.ubc.ca
+X-OriginatorOrg: msl.ubc.ca
+
+--_000_6a9ddbb2955c4b8fb86776502fb4e5a5YQBPR0101MB6054CANPRD01_
+Content-Type: text/plain; charset="iso-8859-1"
+Content-Transfer-Encoding: quoted-printable
+
+
+
+
+-------- Forwarded Message --------
+Subject:        What's new for 'schizophrenia genomics' in PubMed
+Date:   Sun, 8 Mar 2026 06:09:45 -0400 (EDT)
+From:   My NCBI <efback@ncbi.nlm.nih.gov><mailto:efback@ncbi.nlm.nih.gov>
+To:     paul@msl.ubc.ca<mailto:paul@msl.ubc.ca>
+
+
+[CAUTION: Non-UBC Email]
+
+This message contains My NCBI what's new results from the National Center f=
+or Biotechnology Information (NCBI<http://www.ncbi.nlm.nih.gov>) at the U.S=
+. National Library of Medicine (NLM<http://www.nlm.nih.gov>).
+Do not reply directly to this message.
+
+Sender's message:
+
+Sent on Sunday, 2026 March 08
+
+Search: schizophrenia genomics
+
+View<https://pubmed.ncbi.nlm.nih.gov/searches/7644079?startDate=3D2026-03-0=
+1+06%3A06%3A26&endDate=3D2026-03-08+06%3A06%3A23&token=3D1D72nPm749x&sort=
+=3Ddate> complete results in PubMed (results may change over time).
+
+Edit<https://www.ncbi.nlm.nih.gov/myncbi/searches/7644079/> saved search se=
+ttings, or unsubscribe<https://www.ncbi.nlm.nih.gov/myncbi/searches/7644079=
+/unsubscribe/1HeZD5-SMp2> from these email updates.
+PubMed Results
+
+Items 1-18 of 18 (Display the 18 citations in PubMed<https://pubmed.ncbi.nl=
+m.nih.gov/?term=3D41795042,41792186,41785323,41784660,41780463,41779404,417=
+75981,41773067,41771789,41767305,41767152,41764180,41764167,41764057,417545=
+88,41690235,41627908,41611717&sort=3Ddate>)
+
+1.
+
+Leveraging the genetics of psychiatric disorders to prioritize potential dr=
+ug targets and compounds. <https://pubmed.ncbi.nlm.nih.gov/41795042/>
+
+Parker N, Koch E, Shadrin AA, Fuhrer J, Hindley GFL, Stinson SE, Jaholkowsk=
+i P, Tesfaye M, Dale AM, Wingo TS, Wingo AP, Frei O, O'Connell KS, Smeland =
+OB, Andreassen OA.
+
+Neuropsychopharmacology. 2026 Mar 7. doi: 10.1038/s41386-026-02380-8. Onlin=
+e ahead of print.
+
+PMID: 41795042
+
+2.
+
+An ENIGMA Consortium study of the relationship between white matter microst=
+ructure and positive and negative symptom severity in patients with schizop=
+hrenia. <https://pubmed.ncbi.nlm.nih.gov/41792186/>
+
+Warren A, Holleran L, Agartz I, Andreassen OA, Banaj N, Cannon DM, Corvin A=
+, Green M, Gur R, Hashimoto R, Hong E, Hoschl C, Kochunov P, Lawrie SM, McD=
+onald C, Morris D, Mothersill D, Neilson E, Pantelis C, Piras F, Rasser PE,=
+ Roalf D, Satterthwaite TD, Schall U, Sim K, Skoch A, Spalletta G, Spaniel =
+F, Thomopoulos S, Tomecek D, Zalesky A, Thompson PM, Jahanshad N, Turner JA=
+, van Erp TGM, Donohoe G; ENIGMA Consortium Schizophrenia Working Group.
+
+Schizophrenia (Heidelb). 2026 Mar 6. doi: 10.1038/s41537-026-00728-z. Onlin=
+e ahead of print.
+
+PMID: 41792186
+
+3.
+
+Loss of function of the chromatin remodeling gene INO80D leads to neurogeni=
+c features of schizophrenia. <https://pubmed.ncbi.nlm.nih.gov/41785323/>
+
+Sunshine AB, Gulsuner S, Williams CA, Sarchi M, Chen RY, Cavanaugh C, Hesso=
+n J, Mathieu J, Young JE, McClellan JM, King MC.
+
+Proc Natl Acad Sci U S A. 2026 Mar 10;123(10):e2536039123. doi: 10.1073/pna=
+s.2536039123. Epub 2026 Mar 5.
+
+PMID: 41785323
+
+4.
+
+The causal relationships between childhood-onset asthma and major mental di=
+sorders: an MR study. <https://pubmed.ncbi.nlm.nih.gov/41784660/>
+
+He Z, Chen B, Xue M, Deng Q.
+
+Eur Arch Psychiatry Clin Neurosci. 2026 Mar 5. doi: 10.1007/s00406-026-0220=
+0-6. Online ahead of print.
+
+PMID: 41784660
+
+5.
+
+Disentangling the relationship between psychiatric disorders, cardiometabol=
+ic abnormalities, and antipsychotics: A systematic review of genomic studie=
+s. <https://pubmed.ncbi.nlm.nih.gov/41780463/>
+
+Shepherd R, Stacey D, Janetzki J, Clark SR, Hypp=F6nen E, Suppiah V.
+
+Schizophr Res. 2026 Mar 3;291:119-134. doi: 10.1016/j.schres.2026.02.014. O=
+nline ahead of print.
+
+PMID: 41780463      Review.
+
+6.
+
+Climate-Related and Nature-Based Interventions for Mental Health: An Umbrel=
+la Review and Meta-Analysis. <https://pubmed.ncbi.nlm.nih.gov/41779404/>
+
+Brandt L, De Prisco M, Nocera D, Rehm MC, Cohen S, Kosker DN, von Luxburg S=
+, Ori D, Pinz=F3n-Espinosa J, Scheuber P, Sonntag N, Radua J, Hasan A, Luyk=
+x JJ; Global Evidence on Planetary Mental Health Study Group; Adli M, Adorj=
+an K, Aruta JJBR, Augustinavicius J, Bajbouj M, B=E4rnighausen T, Bosia M, =
+Bruining H, Castaldelli-Maia JM, Catthoor K, Chkonia E, Dom G, Van der Eyck=
+en E, Fiorillo A, Friedel E, Fusar-Poli P, Gondek TM, Guinto RR, Heinz A, H=
+ertig E, Hunt X, K=FChn S, Kuzman MR, Lawrance EL, Leucht S, Liu S, Massazz=
+a A, Meyer-Lindenberg A, Ndetei D, Nielsen RE, Okasha T, Page L, Patel VH, =
+Ryznar E, Schumann G, Shoib S, Simon J, Stuke H, Su TT, Summergrad P, Newbe=
+rry Le Vay J, Vieta E, Wagner E, Walter H, Xue S.
+
+JAMA Psychiatry. 2026 Mar 4:e260037. doi: 10.1001/jamapsychiatry.2026.0037.=
+ Online ahead of print.
+
+PMID: 41779404
+
+7.
+
+Increased Cerebrospinal Fluid Lactate Levels in Schizophrenia and Major Dep=
+ressive Disorder: NCNP Biobank Study in Japan. <https://pubmed.ncbi.nlm.nih=
+.gov/41775981/>
+
+Hagihara H, Hattori K, Kunugi H, Miyakawa T.
+
+Neuropsychopharmacol Rep. 2026 Mar;46(1):e70096. doi: 10.1002/npr2.70096.
+
+PMID: 41775981      Free PMC article.
+
+8.
+
+Investigating the relationship between Toll-like receptor activity, low-gra=
+de inflammation, cognitive deficits, and antipsychotic drug dose in schizop=
+hrenia patients: a moderation analysis. <https://pubmed.ncbi.nlm.nih.gov/41=
+773067/>
+
+Patlola SR, Hallahan B, McManus R, Kenyon M, McDonald C, Morris D, Kelly J,=
+ Donohoe G, McKernan DP.
+
+Psychol Med. 2026 Mar 3;56:e63. doi: 10.1017/S0033291726103596.
+
+PMID: 41773067
+
+9.
+
+Commentary on Immune-Genomic Approaches to Schizophrenia: Highlighting IRF3=
+, L3HYPDH, and Drug Repurposing Targets. <https://pubmed.ncbi.nlm.nih.gov/4=
+1771789/>
+
+Lin CP, Wei LC.
+
+Am J Med Genet B Neuropsychiatr Genet. 2026 Mar 2. doi: 10.1002/ajmgb.70009=
+. Online ahead of print.
+
+PMID: 41771789      No abstract available.
+
+10.
+
+Differential genome-wide association analysis of schizophrenia and post-tra=
+umatic stress disorder identifies opposing effects at the MAPT/CRHR1 locus.=
+ <https://pubmed.ncbi.nlm.nih.gov/41767305/>
+
+Cheng ZS.
+
+Front Genet. 2026 Feb 13;17:1728494. doi: 10.3389/fgene.2026.1728494. eColl=
+ection 2026.
+
+PMID: 41767305      Free PMC article.
+
+11.
+
+Metabolomics biomarkers for precision psychiatry. <https://pubmed.ncbi.nlm.=
+nih.gov/41767152/>
+
+Cavaleri D, Bassetti C, Cucchi G, De Fazio P, de Filippis R, Albert U, Pell=
+egrini L, Carr=E0 G, Bartoli F.
+
+Front Psychiatry. 2026 Feb 13;17:1736206. doi: 10.3389/fpsyt.2026.1736206. =
+eCollection 2026.
+
+PMID: 41767152      Free PMC article.      Review.
+
+12.
+
+Computation and resource efficient genome-wide association analysis for lar=
+ge-scale imaging studies. <https://pubmed.ncbi.nlm.nih.gov/41764180/>
+
+Jiang Z, Stein J, Li T, Fang E, Li Y, Sullivan P, Zhu H.
+
+Nat Commun. 2026 Feb 28. doi: 10.1038/s41467-026-69816-z. Online ahead of p=
+rint.
+
+PMID: 41764180
+
+13.
+
+Common and rare variant contributions to discontinuation of stimulant treat=
+ment in ADHD. <https://pubmed.ncbi.nlm.nih.gov/41764167/>
+
+Thirstrup JP, Duan J, Ribases Haro M, Soler Artigas M, Albi=F1ana C, Dalsga=
+ard S, Faraone SV, Werge T, Bybjerg-Grauholm J, B=F8rglum AD, Agerbo E, Yao=
+ H, Chang Z, Brikell I, Demontis D.
+
+Transl Psychiatry. 2026 Feb 28. doi: 10.1038/s41398-026-03925-7. Online ahe=
+ad of print.
+
+PMID: 41764167
+
+14.
+
+Targeted Therapeutic Intervention for Problematic Alcohol Use, Comorbid Dep=
+ressive Disorder, and Schizophrenia: Response to Lawford and Norrie. <https=
+://pubmed.ncbi.nlm.nih.gov/41764057/>
+
+Myung W, Ahn Y, Kim J, Won HH.
+
+Am J Psychiatry. 2026 Mar 1;183(3):216. doi: 10.1176/appi.ajp.20260041. Epu=
+b 2026 Mar 1.
+
+PMID: 41764057      No abstract available.
+
+15.
+
+ERVWE1 Impairs Mitochondrial Homeostasis and Promotes Neuronal Apoptosis vi=
+a the miR-27b-3p/BNIP3 Axis in Schizophrenia. <https://pubmed.ncbi.nlm.nih.=
+gov/41754588/>
+
+Su Y, Zhao K, Zhang M, Zhang J, Lv Z, Hou F, Zhang X, Zhang Z, Zhu F.
+
+Viruses. 2026 Feb 14;18(2):245. doi: 10.3390/v18020245.
+
+PMID: 41754588      Free PMC article.
+
+16.
+
+Convergence and divergence of molecular phenotypes in iPSC-derived models o=
+f 16p11.2 and 22q11.2 reciprocal copy number variants. <https://pubmed.ncbi=
+.nlm.nih.gov/41690235/>
+
+Rajkumar S, Bearden CE, Sebat J, Iakoucheva LM.
+
+Curr Opin Genet Dev. 2026 Apr;97:102441. doi: 10.1016/j.gde.2026.102441. Ep=
+ub 2026 Feb 13.
+
+PMID: 41690235      Review.
+
+17.
+
+Kidney function and five types of psychiatric traits/disorders: a bidirecti=
+onal mendelian randomisation study. <https://pubmed.ncbi.nlm.nih.gov/416279=
+08/>
+
+Yu Y, Wen M, Meng Y, Hun M, Xie C, Zhao M, He Q.
+
+World J Biol Psychiatry. 2026 Mar;27(3):221-232. doi: 10.1080/15622975.2026=
+.2621062. Epub 2026 Feb 2.
+
+PMID: 41627908
+
+18.
+
+Human brain prefrontal cortex proteomics identifies compromised energy meta=
+bolism and neuronal function in Schizophrenia. <https://pubmed.ncbi.nlm.nih=
+.gov/41611717/>
+
+Koopmans F, Dijkstra AA, Li WP, Klaassen RV, Gouwenberg Y, Yao S, Bast L, V=
+erhage M, Karlsson R, Dwork AJ, Stockmeier CA, Hjerling-Leffler J, Sullivan=
+ PF, Smit AB.
+
+Nat Commun. 2026 Jan 29;17(1):2131. doi: 10.1038/s41467-026-68950-y.
+
+PMID: 41611717      Free PMC article.
+
+--_000_6a9ddbb2955c4b8fb86776502fb4e5a5YQBPR0101MB6054CANPRD01_
+Content-Type: text/html; charset="iso-8859-1"
+Content-ID: <3072D4C19F02284495908DDB2DCD9B72@CANPRD01.PROD.OUTLOOK.COM>
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Diso-8859-=
+1">
+</head>
+<body style=3D"font-size:18px;max-width:1000px">
+<p><br>
+</p>
+<div class=3D"moz-forward-container"><br>
+<br>
+-------- Forwarded Message --------
+<table cellpadding=3D"0" cellspacing=3D"0" border=3D"0" class=3D"moz-email-=
+headers-table">
+<tbody>
+<tr>
+<th valign=3D"BASELINE" align=3D"RIGHT" nowrap=3D"nowrap">Subject: </th>
+<td>What's new for 'schizophrenia genomics' in PubMed</td>
+</tr>
+<tr>
+<th valign=3D"BASELINE" align=3D"RIGHT" nowrap=3D"nowrap">Date: </th>
+<td>Sun, 8 Mar 2026 06:09:45 -0400 (EDT)</td>
+</tr>
+<tr>
+<th valign=3D"BASELINE" align=3D"RIGHT" nowrap=3D"nowrap">From: </th>
+<td>My NCBI <a class=3D"moz-txt-link-rfc2396E" href=3D"mailto:efback@ncbi.n=
+lm.nih.gov">
+&lt;efback@ncbi.nlm.nih.gov&gt;</a></td>
+</tr>
+<tr>
+<th valign=3D"BASELINE" align=3D"RIGHT" nowrap=3D"nowrap">To: </th>
+<td><a class=3D"moz-txt-link-abbreviated" href=3D"mailto:paul@msl.ubc.ca">p=
+aul@msl.ubc.ca</a></td>
+</tr>
+</tbody>
+</table>
+<br>
+<br>
+<title>18 articles - PubMed</title>
+<style>h1 {
+      font-size: 1.5em;
+      margin: 12px 0;
+    }h2 {
+      margin-bottom: 4px;
+      font-size: 24px;
+      padding: 0;
+    }h3 {
+      margin: 10px 0 0 0;
+      padding: 0;
+    }p {
+      margin: 6px 0 0 0;
+      padding: 0;
+    }.docsum-title{
+      margin: 0;
+      padding: 0;
+    }.docsum-citation {
+      color: #4D8055;
+      margin-bottom: 0;
+    }.citation-part {
+      display: inline-block;
+      margin-top: 0;
+      margin-bottom: 0;
+    }.docsum-authors {
+      color: #212121;
+      margin: 0;
+      padding: 0;
+    }.free-resources {
+      color: #C05600;
+      font-weight: 600;
+    }.free-label {
+      color: #C05600;
+      font-weight: 600;
+      padding-right: 20px;
+    }.correction-label {
+      color: #981B1E;
+      margin: 0;
+      padding: 0;
+    }.short-journal-citation {
+      display: none;
+    }.full-journal-citation {
+      display: block;
+      padding: 0;
+      margin: 0;
+    }.docsum-pmid {
+        margin: 0;
+        display: inline;
+        padding: 0;
+    }.citation-part {
+        margin-top: 0;
+        padding: 0;
+    }.spaced-citation-item {
+      margin-left: 20px;
+      padding-left: 10px;
+    }.short-authors {
+      display: none;
+    }.full-authors {
+      display: block;
+      margin: 0;
+      padding: 0;
+    }.item-list {
+      margin: 0 0 16px 0;
+      padding: 0;
+      list-style-type: none;
+    }.identifiers {
+      list-style-type: none;
+      margin: 6px 0 16px 0;
+      padding: 0;
+    }.docsum-comments-correction {
+      display: block;
+      margin: 0;
+      padding: 0;
+    }.retraction-banner {
+      color: #981B1E;
+      background-color: #F9DEDE;
+      font-size: 24px;
+      padding-top: 24px;
+      padding-bottom: 24px;
+      padding-left: 10px;
+    }.preprint-notice {
+      background-color: #e1f3f8;
+      padding-top: 24px;
+      padding-bottom: 24px;
+      padding-left: 14px;
+    }.keywords-list {
+      margin: 0 0 16px 30px;
+      padding: 0;
+    }.supplemental-data-list {
+      margin: 0 0 16px 30px;
+      padding: 0;
+    }.grants-list ul {
+      margin: 0 0 16px 30px;
+      padding: 0;
+    }.list {
+      margin-left: 0;
+      padding-left: 0;
+      list-style-type: none;
+    }</style><style>.retraction-banner a{text-decoration:underline;color: #=
+981b1e;}</style>
+<table style=3D"border-collapse: collapse; padding-left: 0px;">
+<tbody>
+<tr>
+<td><font style=3D"font-family: Arial, sans-serif; font-size: 12px; font-st=
+yle: normal; font-weight: normal; color: #000000; background-color: #FFECB3=
+; line-height: 1.6; padding: 3px;">[<strong>CAUTION:</strong> Non-UBC Email=
+]</font></td>
+</tr>
+</tbody>
+</table>
+<p>This message contains My NCBI what's new results from the National Cente=
+r for Biotechnology Information (<a href=3D"http://www.ncbi.nlm.nih.gov" mo=
+z-do-not-send=3D"true">NCBI</a>) at the U.S. National Library of Medicine (=
+<a href=3D"http://www.nlm.nih.gov" moz-do-not-send=3D"true">NLM</a>).<br>
+Do not reply directly to this message. </p>
+Sender's message: <br>
+<br>
+Sent on Sunday, 2026 March 08<br>
+<br>
+Search: schizophrenia genomics<br>
+<br>
+<a href=3D"https://pubmed.ncbi.nlm.nih.gov/searches/7644079?startDate=3D202=
+6-03-01+06%3A06%3A26&amp;endDate=3D2026-03-08+06%3A06%3A23&amp;token=3D1D72=
+nPm749x&amp;sort=3Ddate" moz-do-not-send=3D"true">View</a> complete results=
+ in PubMed (results may change over time).
+<br>
+<br>
+<a href=3D"https://www.ncbi.nlm.nih.gov/myncbi/searches/7644079/" moz-do-no=
+t-send=3D"true">Edit</a> saved search settings, or
+<a href=3D"https://www.ncbi.nlm.nih.gov/myncbi/searches/7644079/unsubscribe=
+/1HeZD5-SMp2" moz-do-not-send=3D"true">
+unsubscribe</a> from these email updates.<br>
+<div style=3D"font-size: 16px; background-color: rgb(204, 204, 204); width:=
+100%; text-align: center;">
+PubMed Results</div>
+<p style=3D"font-size: 16px;">Items 1-18 of 18 <span>(<a class=3D"email-foo=
+ter-link" href=3D"https://pubmed.ncbi.nlm.nih.gov/?term=3D41795042,41792186=
+,41785323,41784660,41780463,41779404,41775981,41773067,41771789,41767305,41=
+767152,41764180,41764167,41764057,41754588,41690235,41627908,41611717&amp;s=
+ort=3Ddate" moz-do-not-send=3D"true">Display
+ the 18 citations in PubMed</a>)</span></p>
+<main class=3D"base-url-holder" data-base-url=3D"https://pubmed.ncbi.nlm.ni=
+h.gov/">
+<table style=3D"font-size:18px;padding: 0 0 0 5px;">
+<tbody>
+<tr class=3D"item-url-holder" data-item-url=3D"/41795042/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">1. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41795042" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41795042/" ref=3D"article_id=3D4179=
+5042" moz-do-not-send=3D"true">Leveraging the genetics
+ of psychiatric disorders to prioritize potential drug targets and compound=
+s. </a>
+</p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">P=
+arker N, Koch E, Shadrin AA, Fuhrer J, Hindley GFL, Stinson SE, Jaholkowski=
+ P, Tesfaye M, Dale AM, Wingo TS, Wingo AP, Frei O, O'Connell KS, Smeland O=
+B, Andreassen OA.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Neuropsychopharmacology. 2026 Mar 7. doi: 10.1038/s41386-026-02380-8. Onlin=
+e ahead of print.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41795042</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41792186/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">2. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41792186" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41792186/" ref=3D"article_id=3D4179=
+2186" moz-do-not-send=3D"true">An ENIGMA Consortium
+ study of the relationship between white matter microstructure and positive=
+ and negative symptom severity in patients with schizophrenia.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">W=
+arren A, Holleran L, Agartz I, Andreassen OA, Banaj N, Cannon DM, Corvin A,=
+ Green M, Gur R, Hashimoto R, Hong E, Hoschl C, Kochunov P, Lawrie SM, McDo=
+nald C, Morris D, Mothersill D, Neilson
+ E, Pantelis C, Piras F, Rasser PE, Roalf D, Satterthwaite TD, Schall U, Si=
+m K, Skoch A, Spalletta G, Spaniel F, Thomopoulos S, Tomecek D, Zalesky A, =
+Thompson PM, Jahanshad N, Turner JA, van Erp TGM, Donohoe G; ENIGMA Consort=
+ium Schizophrenia Working Group.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Schizophrenia (Heidelb). 2026 Mar 6. doi: 10.1038/s41537-026-00728-z. Onlin=
+e ahead of print.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41792186</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41785323/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">3. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41785323" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41785323/" ref=3D"article_id=3D4178=
+5323" moz-do-not-send=3D"true">Loss of function of the
+ chromatin remodeling gene <em>INO80D</em> leads to neurogenic features of =
+schizophrenia.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">S=
+unshine AB, Gulsuner S, Williams CA, Sarchi M, Chen RY, Cavanaugh C, Hesson=
+ J, Mathieu J, Young JE, McClellan JM, King MC.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Proc Natl Acad Sci U S A. 2026 Mar 10;123(10):e2536039123. doi: 10.1073/pna=
+s.2536039123. Epub 2026 Mar 5.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41785323</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41784660/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">4. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41784660" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41784660/" ref=3D"article_id=3D4178=
+4660" moz-do-not-send=3D"true">The causal relationships
+ between childhood-onset asthma and major mental disorders: an MR study. </=
+a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">H=
+e Z, Chen B, Xue M, Deng Q.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Eur Arch Psychiatry Clin Neurosci. 2026 Mar 5. doi: 10.1007/s00406-026-0220=
+0-6. Online ahead of print.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41784660</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41780463/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">5. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41780463" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41780463/" ref=3D"article_id=3D4178=
+0463" moz-do-not-send=3D"true">Disentangling the relationship
+ between psychiatric disorders, cardiometabolic abnormalities, and antipsyc=
+hotics: A systematic review of genomic studies.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">S=
+hepherd R, Stacey D, Janetzki J, Clark SR, Hypp=F6nen E, Suppiah V.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Schizophr Res. 2026 Mar 3;291:119-134. doi: 10.1016/j.schres.2026.02.014. O=
+nline ahead of print.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41780463</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"publication-type spaced-citation-item citation-part">
+Review.</span> &nbsp;&nbsp;&nbsp;&nbsp; </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41779404/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">6. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41779404" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41779404/" ref=3D"article_id=3D4177=
+9404" moz-do-not-send=3D"true">Climate-Related and Nature-Based
+ Interventions for Mental Health: An Umbrella Review and Meta-Analysis. </a=
+></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">B=
+randt L, De Prisco M, Nocera D, Rehm MC, Cohen S, Kosker DN, von Luxburg S,=
+ Ori D, Pinz=F3n-Espinosa J, Scheuber P, Sonntag N, Radua J, Hasan A, Luykx=
+ JJ; Global Evidence on Planetary Mental
+ Health Study Group; Adli M, Adorjan K, Aruta JJBR, Augustinavicius J, Bajb=
+ouj M, B=E4rnighausen T, Bosia M, Bruining H, Castaldelli-Maia JM, Catthoor=
+ K, Chkonia E, Dom G, Van der Eycken E, Fiorillo A, Friedel E, Fusar-Poli P=
+, Gondek TM, Guinto RR, Heinz A, Hertig
+ E, Hunt X, K=FChn S, Kuzman MR, Lawrance EL, Leucht S, Liu S, Massazza A, =
+Meyer-Lindenberg A, Ndetei D, Nielsen RE, Okasha T, Page L, Patel VH, Ryzna=
+r E, Schumann G, Shoib S, Simon J, Stuke H, Su TT, Summergrad P, Newberry L=
+e Vay J, Vieta E, Wagner E, Walter
+ H, Xue S.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+JAMA Psychiatry. 2026 Mar 4:e260037. doi: 10.1001/jamapsychiatry.2026.0037.=
+ Online ahead of print.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41779404</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41775981/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">7. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41775981" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41775981/" ref=3D"article_id=3D4177=
+5981" moz-do-not-send=3D"true">Increased Cerebrospinal
+ Fluid Lactate Levels in Schizophrenia and Major Depressive Disorder: NCNP =
+Biobank Study in Japan.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">H=
+agihara H, Hattori K, Kunugi H, Miyakawa T.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Neuropsychopharmacol Rep. 2026 Mar;46(1):e70096. doi: 10.1002/npr2.70096.</=
+p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41775981</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"free-resources spaced-citation-item citation-part">
+Free PMC article.</span> &nbsp;&nbsp;&nbsp;&nbsp; </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41773067/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">8. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41773067" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41773067/" ref=3D"article_id=3D4177=
+3067" moz-do-not-send=3D"true">Investigating the relationship
+ between Toll-like receptor activity, low-grade inflammation, cognitive def=
+icits, and antipsychotic drug dose in schizophrenia patients: a moderation =
+analysis.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">P=
+atlola SR, Hallahan B, McManus R, Kenyon M, McDonald C, Morris D, Kelly J, =
+Donohoe G, McKernan DP.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Psychol Med. 2026 Mar 3;56:e63. doi: 10.1017/S0033291726103596.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41773067</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41771789/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">9. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41771789" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41771789/" ref=3D"article_id=3D4177=
+1789" moz-do-not-send=3D"true">Commentary on Immune-Genomic
+ Approaches to Schizophrenia: Highlighting IRF3, L3HYPDH, and Drug Repurpos=
+ing Targets.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">L=
+in CP, Wei LC.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Am J Med Genet B Neuropsychiatr Genet. 2026 Mar 2. doi: 10.1002/ajmgb.70009=
+. Online ahead of print.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41771789</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"no-abstract spaced-citation-item citation-part">
+No abstract available.</span> </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41767305/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">10. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41767305" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41767305/" ref=3D"article_id=3D4176=
+7305" moz-do-not-send=3D"true">Differential genome-wide
+ association analysis of schizophrenia and post-traumatic stress disorder i=
+dentifies opposing effects at the
+<em>MAPT</em>/<em>CRHR1</em> locus. </a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">C=
+heng ZS.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Front Genet. 2026 Feb 13;17:1728494. doi: 10.3389/fgene.2026.1728494. eColl=
+ection 2026.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41767305</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"free-resources spaced-citation-item citation-part">
+Free PMC article.</span> &nbsp;&nbsp;&nbsp;&nbsp; </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41767152/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">11. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41767152" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41767152/" ref=3D"article_id=3D4176=
+7152" moz-do-not-send=3D"true">Metabolomics biomarkers
+ for precision psychiatry. </a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">C=
+avaleri D, Bassetti C, Cucchi G, De Fazio P, de Filippis R, Albert U, Pelle=
+grini L, Carr=E0 G, Bartoli F.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Front Psychiatry. 2026 Feb 13;17:1736206. doi: 10.3389/fpsyt.2026.1736206. =
+eCollection 2026.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41767152</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"free-resources spaced-citation-item citation-part">
+Free PMC article.</span> &nbsp;&nbsp;&nbsp;&nbsp; <span class=3D"publicatio=
+n-type spaced-citation-item citation-part">
+Review.</span> &nbsp;&nbsp;&nbsp;&nbsp; </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41764180/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">12. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41764180" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41764180/" ref=3D"article_id=3D4176=
+4180" moz-do-not-send=3D"true">Computation and resource
+ efficient genome-wide association analysis for large-scale imaging studies=
+. </a>
+</p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">J=
+iang Z, Stein J, Li T, Fang E, Li Y, Sullivan P, Zhu H.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Nat Commun. 2026 Feb 28. doi: 10.1038/s41467-026-69816-z. Online ahead of p=
+rint.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41764180</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41764167/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">13. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41764167" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41764167/" ref=3D"article_id=3D4176=
+4167" moz-do-not-send=3D"true">Common and rare variant
+ contributions to discontinuation of stimulant treatment in ADHD. </a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">T=
+hirstrup JP, Duan J, Ribases Haro M, Soler Artigas M, Albi=F1ana C, Dalsgaa=
+rd S, Faraone SV, Werge T, Bybjerg-Grauholm J, B=F8rglum AD, Agerbo E, Yao =
+H, Chang Z, Brikell I, Demontis D.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Transl Psychiatry. 2026 Feb 28. doi: 10.1038/s41398-026-03925-7. Online ahe=
+ad of print.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41764167</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41764057/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">14. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41764057" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41764057/" ref=3D"article_id=3D4176=
+4057" moz-do-not-send=3D"true">Targeted Therapeutic
+ Intervention for Problematic Alcohol Use, Comorbid Depressive Disorder, an=
+d Schizophrenia: Response to Lawford and Norrie.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">M=
+yung W, Ahn Y, Kim J, Won HH.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Am J Psychiatry. 2026 Mar 1;183(3):216. doi: 10.1176/appi.ajp.20260041. Epu=
+b 2026 Mar 1.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41764057</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"no-abstract spaced-citation-item citation-part">
+No abstract available.</span> </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41754588/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">15. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41754588" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41754588/" ref=3D"article_id=3D4175=
+4588" moz-do-not-send=3D"true">ERVWE1 Impairs Mitochondrial
+ Homeostasis and Promotes Neuronal Apoptosis via the miR-27b-3p/BNIP3 Axis =
+in Schizophrenia.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">S=
+u Y, Zhao K, Zhang M, Zhang J, Lv Z, Hou F, Zhang X, Zhang Z, Zhu F.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Viruses. 2026 Feb 14;18(2):245. doi: 10.3390/v18020245.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41754588</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"free-resources spaced-citation-item citation-part">
+Free PMC article.</span> &nbsp;&nbsp;&nbsp;&nbsp; </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41690235/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">16. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41690235" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41690235/" ref=3D"article_id=3D4169=
+0235" moz-do-not-send=3D"true">Convergence and divergence
+ of molecular phenotypes in iPSC-derived models of 16p11.2 and 22q11.2 reci=
+procal copy number variants.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">R=
+ajkumar S, Bearden CE, Sebat J, Iakoucheva LM.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Curr Opin Genet Dev. 2026 Apr;97:102441. doi: 10.1016/j.gde.2026.102441. Ep=
+ub 2026 Feb 13.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41690235</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"publication-type spaced-citation-item citation-part">
+Review.</span> &nbsp;&nbsp;&nbsp;&nbsp; </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41627908/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">17. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41627908" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41627908/" ref=3D"article_id=3D4162=
+7908" moz-do-not-send=3D"true">Kidney function and five
+ types of psychiatric traits/disorders: a bidirectional mendelian randomisa=
+tion study.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">Y=
+u Y, Wen M, Meng Y, Hun M, Xie C, Zhao M, He Q.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+World J Biol Psychiatry. 2026 Mar;27(3):221-232. doi: 10.1080/15622975.2026=
+.2621062. Epub 2026 Feb 2.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41627908</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ </p>
+</div>
+</div>
+</td>
+</tr>
+<tr class=3D"item-url-holder" data-item-url=3D"/41611717/">
+<td style=3D"vertical-align:text-top;">
+<div style=3D"padding:10px 10px 10px 0;">18. </div>
+</td>
+<td class=3D"item-wrap">
+<div style=3D"padding:10px 10px 10px 0">
+<p class=3D"docsum-content" style=3D"display: inline;"><a class=3D"docsum-t=
+itle" data-ga-action=3D"41611717" data-ga-category=3D"" data-ga-label=3D"" =
+href=3D"https://pubmed.ncbi.nlm.nih.gov/41611717/" ref=3D"article_id=3D4161=
+1717" moz-do-not-send=3D"true">Human brain prefrontal
+ cortex proteomics identifies compromised energy metabolism and neuronal fu=
+nction in Schizophrenia.
+</a></p>
+<div class=3D"docsum-citation full-citation" style=3D"margin: 0; padding: 0=
+;">
+<p class=3D"docsum-authors full-authors" style=3D"margin: 0; padding: 0;">K=
+oopmans F, Dijkstra AA, Li WP, Klaassen RV, Gouwenberg Y, Yao S, Bast L, Ve=
+rhage M, Karlsson R, Dwork AJ, Stockmeier CA, Hjerling-Leffler J, Sullivan =
+PF, Smit AB.</p>
+<p class=3D"docsum-journal-citation full-journal-citation" style=3D"margin:=
+ 0; padding: 0;">
+Nat Commun. 2026 Jan 29;17(1):2131. doi: 10.1038/s41467-026-68950-y.</p>
+<p class=3D"email-citation-parts" style=3D"margin: 0 0 6px 0; padding: 0;">=
+<span class=3D"citation-part">PMID:
+<span class=3D"docsum-pmid">41611717</span></span> &nbsp;&nbsp;&nbsp;&nbsp;=
+ <span class=3D"free-resources spaced-citation-item citation-part">
+Free PMC article.</span> &nbsp;&nbsp;&nbsp;&nbsp; </p>
+</div>
+</div>
+</td>
+</tr>
+</tbody>
+</table>
+</main></div>
+</body>
+</html>
+
+--_000_6a9ddbb2955c4b8fb86776502fb4e5a5YQBPR0101MB6054CANPRD01_--

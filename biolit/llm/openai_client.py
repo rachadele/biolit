@@ -1,6 +1,6 @@
 """OpenAI (and OpenAI-compatible) client."""
 import os
-from pubmed_screener.llm.base import BaseLLMClient
+from biolit.llm.base import BaseLLMClient
 
 
 class OpenAIClient(BaseLLMClient):

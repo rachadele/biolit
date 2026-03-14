@@ -1,6 +1,6 @@
 """Ollama local-model client (uses the Ollama REST API directly via requests)."""
 import requests
-from pubmed_screener.llm.base import BaseLLMClient
+from biolit.llm.base import BaseLLMClient
 
 
 class OllamaClient(BaseLLMClient):
