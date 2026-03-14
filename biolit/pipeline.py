@@ -4,15 +4,15 @@ import json
 import os
 from datetime import datetime
 
-from pubmed_screener.fetchers.geo import fetch_geo_record
-from pubmed_screener.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext
-from pubmed_screener.fetchers.preprints import fetch_preprint
-from pubmed_screener.fetchers.unpaywall import fetch_via_unpaywall
-from pubmed_screener.llm.base import BaseLLMClient
-from pubmed_screener.parsers.jats import parse_jats_sections
-from pubmed_screener.parsers.pdf import parse_pdf_sections
-from pubmed_screener.parsers.utils import select_sections, DEFAULT_MAX_CHARS
-from pubmed_screener.utils import parse_json_response
+from biolit.fetchers.geo import fetch_geo_record
+from biolit.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext
+from biolit.fetchers.preprints import fetch_preprint
+from biolit.fetchers.unpaywall import fetch_via_unpaywall
+from biolit.llm.base import BaseLLMClient
+from biolit.parsers.jats import parse_jats_sections
+from biolit.parsers.pdf import parse_pdf_sections
+from biolit.parsers.utils import select_sections, DEFAULT_MAX_CHARS
+from biolit.utils import parse_json_response
 
 
 # ---------------------------------------------------------------------------

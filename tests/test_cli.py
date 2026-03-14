@@ -2,8 +2,8 @@
 import pathlib
 import pytest
 
-from pubmed_screener.cli import _peek_first_value
-from pubmed_screener.utils import read_geo_file, read_pmids_file
+from biolit.cli import _peek_first_value
+from biolit.utils import read_geo_file, read_pmids_file
 
 REAL_PMIDS = ["41795042", "41792186", "41785323"]
 REAL_ACCESSIONS = ["GSE53987", "GSE12345"]

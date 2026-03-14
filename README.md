@@ -1,12 +1,12 @@
-# PubMed Literature Screener
+# biolit
 
-Screens biomedical literature for relevant records and extracts structured information into a CSV. Accepts PubMed alert emails, plain PMID lists, or GEO accession lists. Supports multiple LLM providers and optional full-text retrieval.
+LLM-assisted biomedical literature screening and structured extraction. Accepts PubMed alert emails, plain PMID lists, or GEO accession lists. Supports multiple LLM providers and optional full-text retrieval.
 
 ## Setup
 
 **Requirements:** Python 3.8+
 
-Install the package (creates the `pubmed-screener` command):
+Install the package (creates the `biolit` command):
 
 ```bash
 pip install -e .
@@ -34,17 +34,17 @@ The tool accepts several input formats, auto-detected by file extension or conte
 Use `--default` to run with schizophrenia genomics defaults (no prompts):
 
 ```bash
-pubmed-screener alert.eml --default
-pubmed-screener pmids.txt --default
-pubmed-screener geo_accessions.txt --default
-pubmed-screener --pmids 41795042,41792186 --default
-pubmed-screener --accessions GSE53987 --default
+biolit alert.eml --default
+biolit pmids.txt --default
+biolit geo_accessions.txt --default
+biolit --pmids 41795042,41792186 --default
+biolit --accessions GSE53987 --default
 ```
 
 Or specify criterion and fields as flags:
 
 ```bash
-pubmed-screener pmids.txt \
+biolit pmids.txt \
   --criterion "Is this about treatment-resistant schizophrenia?" \
   --fields "methodology, sample_size, treatment, outcomes"
 ```
@@ -52,7 +52,7 @@ pubmed-screener pmids.txt \
 Or interactively (prompted if not provided):
 
 ```bash
-pubmed-screener alert.eml
+biolit alert.eml
 ```
 
 ### GEO accession input
@@ -60,7 +60,7 @@ pubmed-screener alert.eml
 Pass a file of GEO series accessions (GSE, GDS, GSM, or GPL prefixes) to screen GEO records directly. The tool fetches each record's MINiML XML, extracts the summary, overall design, experiment type, and organism, then runs the same LLM screening and extraction pipeline.
 
 ```bash
-pubmed-screener geo_accessions.txt \
+biolit geo_accessions.txt \
   --criterion "Does this study perturb a transcription factor?" \
   --fields "organism, experiment_type, tf_perturbed, perturbation_method, summary"
 ```
@@ -77,13 +77,13 @@ Use `--fulltext` to screen and extract from full text instead of just the abstra
 4. Abstract fallback
 
 ```bash
-pubmed-screener alert.eml --default --fulltext --unpaywall-email you@example.com
+biolit alert.eml --default --fulltext --unpaywall-email you@example.com
 ```
 
 Limit which sections are sent to the LLM:
 
 ```bash
-pubmed-screener alert.eml --default --fulltext --sections methods,results
+biolit alert.eml --default --fulltext --sections methods,results
 ```
 
 ### LLM providers
@@ -92,10 +92,10 @@ The tool supports Anthropic (default), OpenAI, and local Ollama models:
 
 ```bash
 # OpenAI
-pubmed-screener pmids.txt --default --provider openai --model gpt-4o
+biolit pmids.txt --default --provider openai --model gpt-4o
 
 # Ollama (local)
-pubmed-screener pmids.txt --default --provider ollama --model llama3
+biolit pmids.txt --default --provider ollama --model llama3
 ```
 
 You can also set `LLM_PROVIDER` and `LLM_MODEL` as environment variables.

@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pubmed_screener.llm.base import BaseLLMClient
-from pubmed_screener.pipeline import run, run_geo, build_output_schema, screen_paper, extract_fields
+from biolit.llm.base import BaseLLMClient
+from biolit.pipeline import run, run_geo, build_output_schema, screen_paper, extract_fields
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
@@ -155,7 +155,7 @@ class TestPipelineRun:
             responses.append('{"methodology": "scRNA-seq", "summary": "Transcriptomics study."}')
         return FakeLLMClient(responses)
 
-    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
     def test_one_relevant_paper_writes_csv(self, mock_fetch, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
         client = self._make_client(paper1_relevant=True, paper2_relevant=False)
@@ -178,7 +178,7 @@ class TestPipelineRun:
         assert rows[0]["methodology"] == "GWAS"
         assert rows[0]["text_source"] == "abstract"
 
-    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
     def test_no_relevant_papers_no_csv(self, mock_fetch, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
         schema_resp = '{"methodology": "method"}'
@@ -197,7 +197,7 @@ class TestPipelineRun:
 
         assert _find_csv(tmp_path) is None, "CSV should not be created when no papers are relevant"
 
-    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
     def test_fetch_error_is_skipped_gracefully(self, mock_fetch, eml_path, tmp_path):
         mock_fetch.side_effect = [Exception("Network error"), FAKE_PAPER_2]
         schema_resp = '{"methodology": "method"}'
@@ -215,8 +215,8 @@ class TestPipelineRun:
             fulltext=False,
         )
 
-    @patch("pubmed_screener.pipeline.fetch_pmc_fulltext")
-    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    @patch("biolit.pipeline.fetch_pmc_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
     def test_fulltext_pmc_used_when_available(self, mock_fetch, mock_pmc, eml_path, tmp_path, sample_jats_xml):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
         # First paper has PMC full text; second does not
@@ -244,7 +244,7 @@ class TestPipelineRun:
         assert len(rows) == 1
         assert rows[0]["text_source"] == "pmc_fulltext"
 
-    @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
     def test_csv_contains_required_columns(self, mock_fetch, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
         client = self._make_client(paper1_relevant=True, paper2_relevant=False)
@@ -291,7 +291,7 @@ class TestRunGeo:
             responses.append('{"methodology": "Microarray", "summary": "Brain expression study."}')
         return FakeLLMClient(responses)
 
-    @patch("pubmed_screener.pipeline.fetch_geo_record")
+    @patch("biolit.pipeline.fetch_geo_record")
     def test_relevant_record_writes_csv(self, mock_fetch, tmp_path):
         mock_fetch.return_value = FAKE_GEO_RECORD
         client = self._make_client(relevant=True)
@@ -314,7 +314,7 @@ class TestRunGeo:
         assert rows[0]["pmids"] == "31123247"
         assert rows[0]["text_source"] == "geo_record"
 
-    @patch("pubmed_screener.pipeline.fetch_geo_record")
+    @patch("biolit.pipeline.fetch_geo_record")
     def test_irrelevant_record_no_csv(self, mock_fetch, tmp_path):
         mock_fetch.return_value = FAKE_GEO_RECORD
         client = self._make_client(relevant=False)
@@ -331,7 +331,7 @@ class TestRunGeo:
         run_dir = next(tmp_path.iterdir())
         assert not (run_dir / "results.csv").exists()
 
-    @patch("pubmed_screener.pipeline.fetch_geo_record")
+    @patch("biolit.pipeline.fetch_geo_record")
     def test_fetch_error_skipped_gracefully(self, mock_fetch, tmp_path):
         mock_fetch.side_effect = RuntimeError("GEO unavailable")
         client = self._make_client(relevant=True)
@@ -345,7 +345,7 @@ class TestRunGeo:
             output_path=str(output),
         )
 
-    @patch("pubmed_screener.pipeline.fetch_geo_record")
+    @patch("biolit.pipeline.fetch_geo_record")
     def test_pmid_column_not_duplicated(self, mock_fetch, tmp_path):
         mock_fetch.return_value = FAKE_GEO_RECORD
         client = self._make_client(relevant=True)

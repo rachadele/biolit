@@ -1,7 +1,7 @@
 """Tests for GEO fetcher parsing logic (no network calls)."""
 import pytest
 
-from pubmed_screener.fetchers.geo import _parse_miniml
+from biolit.fetchers.geo import _parse_miniml
 
 MINIML_WITH_NS = b"""<?xml version="1.0" encoding="UTF-8"?>
 <MINiML xmlns="http://www.ncbi.nlm.nih.gov/geo/info/MINiML">

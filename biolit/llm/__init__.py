@@ -1,8 +1,8 @@
 """LLM abstraction layer."""
-from pubmed_screener.llm.base import BaseLLMClient
-from pubmed_screener.llm.anthropic_client import AnthropicClient
-from pubmed_screener.llm.openai_client import OpenAIClient
-from pubmed_screener.llm.ollama_client import OllamaClient
+from biolit.llm.base import BaseLLMClient
+from biolit.llm.anthropic_client import AnthropicClient
+from biolit.llm.openai_client import OpenAIClient
+from biolit.llm.ollama_client import OllamaClient
 
 _DEFAULTS = {
     "anthropic": "claude-haiku-4-5-20251001",

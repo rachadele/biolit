@@ -1,7 +1,7 @@
 """Anthropic Claude client."""
 import os
 import anthropic
-from pubmed_screener.llm.base import BaseLLMClient
+from biolit.llm.base import BaseLLMClient
 
 
 class AnthropicClient(BaseLLMClient):

@@ -1,14 +1,14 @@
-"""CLI entry point for pubmed-screener."""
+"""CLI entry point for biolit."""
 import argparse
 import os
 import sys
 
 from dotenv import load_dotenv
 
-from pubmed_screener.llm import get_llm_client
-from pubmed_screener.pipeline import run, run_geo
-from pubmed_screener.parsers.utils import DEFAULT_MAX_CHARS
-from pubmed_screener.utils import read_eml_body, extract_pmids, read_pmids_file, read_geo_file
+from biolit.llm import get_llm_client
+from biolit.pipeline import run, run_geo
+from biolit.parsers.utils import DEFAULT_MAX_CHARS
+from biolit.utils import read_eml_body, extract_pmids, read_pmids_file, read_geo_file
 
 load_dotenv()
 

@@ -1,8 +1,8 @@
-"""Unit tests for pubmed_screener.utils — pure logic, no I/O."""
+"""Unit tests for biolit.utils — pure logic, no I/O."""
 import pathlib
 import pytest
 
-from pubmed_screener.utils import extract_pmids, parse_json_response, read_eml_body
+from biolit.utils import extract_pmids, parse_json_response, read_eml_body
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
