@@ -1,6 +1,7 @@
 .env
 .token_cache.json
 *.eml
+!tests/fixtures/*.eml
 results.csv
 __pycache__/
 *.pyc
