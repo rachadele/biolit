@@ -27,8 +27,16 @@ def main(argv: list[str] | None = None) -> None:
         )
     )
     parser.add_argument(
-        "input_file",
-        help="PubMed alert .eml file, or a plain-text file of PMIDs (one per line)",
+        "input_file", nargs="?", default=None,
+        help="PubMed alert .eml file, plain-text file of PMIDs, or plain-text file of GEO accessions",
+    )
+    parser.add_argument(
+        "--pmids", default=None,
+        help="Comma-separated PMIDs (alternative to input_file)",
+    )
+    parser.add_argument(
+        "--accessions", default=None,
+        help="Comma-separated GEO accessions (alternative to input_file)",
     )
 
     # Screening / extraction
@@ -111,23 +119,36 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Using LLM: {client}\n")
 
-    # Resolve input type and dispatch to the appropriate pipeline
-    if args.input_file.endswith(".eml"):
+    # Resolve input — CLI flags take priority over file
+    if not args.input_file and not args.pmids and not args.accessions:
+        print("Error: provide an input_file, --pmids, or --accessions.")
+        sys.exit(1)
+
+    if args.accessions:
+        input_type = "geo"
+        accessions = [a.strip() for a in args.accessions.split(",") if a.strip()]
+        print(f"Using {len(accessions)} GEO accessions from --accessions\n")
+    elif args.pmids:
+        input_type = "pubmed"
+        pmids = [p.strip() for p in args.pmids.split(",") if p.strip()]
+        print(f"Using {len(pmids)} PMIDs from --pmids\n")
+    elif args.input_file.endswith(".eml"):
+        input_type = "pubmed"
         body = read_eml_body(args.input_file)
         pmids = extract_pmids(body)
         print(f"Found {len(pmids)} PMIDs in {args.input_file}\n")
-        input_type = "pubmed"
     else:
-        # Peek at the first non-comment line to detect GEO vs PMID list
         first_value = _peek_first_value(args.input_file)
         if first_value and first_value.upper().startswith(("GSE", "GDS", "GSM", "GPL")):
             input_type = "geo"
+            accessions = read_geo_file(args.input_file)
+            print(f"Read {len(accessions)} GEO accessions from {args.input_file}\n")
         else:
             input_type = "pubmed"
+            pmids = read_pmids_file(args.input_file)
+            print(f"Read {len(pmids)} PMIDs from {args.input_file}\n")
 
     if input_type == "geo":
-        accessions = read_geo_file(args.input_file)
-        print(f"Read {len(accessions)} GEO accessions from {args.input_file}\n")
         if not accessions:
             print("No accessions found. Exiting.")
             sys.exit(1)
@@ -140,11 +161,6 @@ def main(argv: list[str] | None = None) -> None:
             max_chars=args.max_chars,
         )
     else:
-        if args.input_file.endswith(".eml"):
-            pass  # pmids already set above
-        else:
-            pmids = read_pmids_file(args.input_file)
-            print(f"Read {len(pmids)} PMIDs from {args.input_file}\n")
         if not pmids:
             print("No PMIDs found. Exiting.")
             sys.exit(1)
