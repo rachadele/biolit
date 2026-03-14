@@ -21,13 +21,15 @@ cp .env.example .env
 
 ## Usage
 
-The tool accepts three input types, auto-detected by file content:
+The tool accepts several input formats, auto-detected by file extension or content:
 
-| Input | Format | Example |
+| Input | How to pass | Example |
 |---|---|---|
-| PubMed alert email | `.eml` file | `alert.eml` |
-| PMID list | plain text, one PMID per line | `pmids.txt` |
-| GEO accession list | plain text, one accession per line | `geo_accessions.txt` |
+| PubMed alert email | positional `.eml` file | `alert.eml` |
+| PMID list (file) | positional plain-text file, one PMID per line | `pmids.txt` |
+| GEO accession list (file) | positional plain-text file, one accession per line | `geo_accessions.txt` |
+| PMIDs (inline) | `--pmids` flag, comma-separated | `--pmids 41795042,41792186` |
+| GEO accessions (inline) | `--accessions` flag, comma-separated | `--accessions GSE53987,GSE12345` |
 
 Use `--default` to run with schizophrenia genomics defaults (no prompts):
 
@@ -35,6 +37,8 @@ Use `--default` to run with schizophrenia genomics defaults (no prompts):
 pubmed-screener alert.eml --default
 pubmed-screener pmids.txt --default
 pubmed-screener geo_accessions.txt --default
+pubmed-screener --pmids 41795042,41792186 --default
+pubmed-screener --accessions GSE53987 --default
 ```
 
 Or specify criterion and fields as flags:
