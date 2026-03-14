@@ -11,7 +11,7 @@ from pubmed_screener.llm.base import BaseLLMClient
 from pubmed_screener.parsers.jats import parse_jats_sections
 from pubmed_screener.parsers.pdf import parse_pdf_sections
 from pubmed_screener.parsers.utils import select_sections, DEFAULT_MAX_CHARS
-from pubmed_screener.utils import read_eml_body, extract_pmids, parse_json_response
+from pubmed_screener.utils import parse_json_response
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ def resolve_fulltext(
 
 def run(
     client: BaseLLMClient,
-    eml_path: str,
+    pmids: list[str],
     criterion: str,
     fields_description: str,
     output_path: str,
@@ -157,10 +157,7 @@ def run(
     output_schema = build_output_schema(client, fields_description)
     print(f"  Fields: {', '.join(output_schema.keys())}\n")
 
-    # Step 2: parse email
-    body = read_eml_body(eml_path)
-    pmids = extract_pmids(body)
-    print(f"Found {len(pmids)} papers in {eml_path}\n")
+    print(f"Processing {len(pmids)} PMIDs\n")
 
     run_dir, csv_path = _make_run_dir(output_path)
     artifacts_root = os.path.join(run_dir, "artifacts")

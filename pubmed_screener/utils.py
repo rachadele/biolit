@@ -40,6 +40,17 @@ def extract_pmids(body: str) -> list[str]:
     return unique
 
 
+def read_pmids_file(path: str) -> list[str]:
+    """Read a plain-text file of PMIDs (one per line, comments and blanks ignored)."""
+    pmids = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and line.isdigit():
+                pmids.append(line)
+    return pmids
+
+
 def parse_json_response(text: str) -> dict:
     """Parse JSON from an LLM response, stripping markdown code fences if present."""
     text = text.strip()

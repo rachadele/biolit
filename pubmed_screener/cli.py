@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from pubmed_screener.llm import get_llm_client
 from pubmed_screener.pipeline import run
 from pubmed_screener.parsers.utils import DEFAULT_MAX_CHARS
+from pubmed_screener.utils import read_eml_body, extract_pmids, read_pmids_file
 
 load_dotenv()
 
@@ -25,7 +26,10 @@ def main(argv: list[str] | None = None) -> None:
             "Supports multiple LLM providers and optional full-text fetching."
         )
     )
-    parser.add_argument("eml_file", help="Path to the PubMed alert .eml file")
+    parser.add_argument(
+        "input_file",
+        help="PubMed alert .eml file, or a plain-text file of PMIDs (one per line)",
+    )
 
     # Screening / extraction
     parser.add_argument("--criterion", default=None,
@@ -107,6 +111,19 @@ def main(argv: list[str] | None = None) -> None:
 
     print(f"Using LLM: {client}\n")
 
+    # Resolve input to a list of PMIDs
+    if args.input_file.endswith(".eml"):
+        body = read_eml_body(args.input_file)
+        pmids = extract_pmids(body)
+        print(f"Found {len(pmids)} PMIDs in {args.input_file}\n")
+    else:
+        pmids = read_pmids_file(args.input_file)
+        print(f"Read {len(pmids)} PMIDs from {args.input_file}\n")
+
+    if not pmids:
+        print("No PMIDs found. Exiting.")
+        sys.exit(1)
+
     # Sections filter
     sections_wanted = (
         [s.strip() for s in args.sections.split(",") if s.strip()]
@@ -116,7 +133,7 @@ def main(argv: list[str] | None = None) -> None:
 
     run(
         client=client,
-        eml_path=args.eml_file,
+        pmids=pmids,
         criterion=criterion,
         fields_description=fields,
         output_path=args.output,
