@@ -11,7 +11,7 @@ class TestExtractPmids:
     def test_finds_two_pmids_in_stub_body(self, eml_path):
         body = read_eml_body(str(eml_path))
         pmids = extract_pmids(body)
-        assert pmids == ["11111111", "22222222"]
+        assert pmids == ["41795042", "41792186"]
 
     def test_deduplicates_repeated_pmids(self):
         body = "PMID: 99999999\nSome text\nPMID: 99999999\nPMID: 88888888"
@@ -46,8 +46,8 @@ class TestParseJsonResponse:
 class TestReadEmlBody:
     def test_reads_stub_eml_and_contains_pmids(self, eml_path):
         body = read_eml_body(str(eml_path))
-        assert "11111111" in body
-        assert "22222222" in body
+        assert "41795042" in body
+        assert "41792186" in body
 
     def test_returns_string(self, eml_path):
         body = read_eml_body(str(eml_path))

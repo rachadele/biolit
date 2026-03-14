@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pubmed_screener.llm.base import BaseLLMClient
-from pubmed_screener.pipeline import run, build_output_schema, screen_paper, extract_fields
+from pubmed_screener.pipeline import run, run_geo, build_output_schema, screen_paper, extract_fields
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
@@ -43,23 +43,23 @@ class FakeLLMClient(BaseLLMClient):
 # ---------------------------------------------------------------------------
 
 FAKE_PAPER_1 = {
-    "pmid": "11111111",
+    "pmid": "41795042",
     "doi": "10.1038/s41588-026-01234-5",
     "title": "Genome-wide association study of schizophrenia in a European cohort",
     "abstract": "GWAS of schizophrenia in 130,000 individuals identified 47 loci.",
     "mesh_terms": ["Schizophrenia", "Genome-Wide Association Study"],
-    "url": "https://pubmed.ncbi.nlm.nih.gov/11111111/",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/41795042/",
     "fulltext_xml": None,
     "fulltext_pdf": None,
 }
 
 FAKE_PAPER_2 = {
-    "pmid": "22222222",
+    "pmid": "41792186",
     "doi": "10.1016/j.biopsych.2026.01.005",
     "title": "Transcriptomic profiling of prefrontal cortex in schizophrenia",
     "abstract": "scRNA-seq of 200,000 nuclei from schizophrenia patients and controls.",
     "mesh_terms": ["Schizophrenia", "Transcriptome", "Prefrontal Cortex"],
-    "url": "https://pubmed.ncbi.nlm.nih.gov/22222222/",
+    "url": "https://pubmed.ncbi.nlm.nih.gov/41792186/",
     "fulltext_xml": None,
     "fulltext_pdf": None,
 }
@@ -131,6 +131,12 @@ class TestExtractFields:
 # Full end-to-end pipeline integration test
 # ---------------------------------------------------------------------------
 
+def _find_csv(tmp_path: pathlib.Path) -> pathlib.Path | None:
+    """Return the results.csv written inside a run_* subdirectory, or None."""
+    matches = list(tmp_path.rglob("results.csv"))
+    return matches[0] if matches else None
+
+
 class TestPipelineRun:
     """Run the complete pipeline with mocked network calls and a fake LLM."""
 
@@ -157,17 +163,18 @@ class TestPipelineRun:
 
         run(
             client=client,
-            eml_path=str(eml_path),
+            pmids=["41795042", "41792186"],
             criterion="Is this about schizophrenia genomics?",
             fields_description="methodology, summary",
             output_path=str(output),
             fulltext=False,
         )
 
-        assert output.exists(), "CSV output file should be created"
-        rows = list(csv.DictReader(output.open()))
+        csv_path = _find_csv(tmp_path)
+        assert csv_path is not None, "CSV output file should be created"
+        rows = list(csv.DictReader(csv_path.open()))
         assert len(rows) == 1
-        assert rows[0]["pmid"] == "11111111"
+        assert rows[0]["pmid"] == "41795042"
         assert rows[0]["methodology"] == "GWAS"
         assert rows[0]["text_source"] == "abstract"
 
@@ -181,14 +188,14 @@ class TestPipelineRun:
 
         run(
             client=client,
-            eml_path=str(eml_path),
+            pmids=["41795042", "41792186"],
             criterion="Unrelated criterion",
             fields_description="methodology",
             output_path=str(output),
             fulltext=False,
         )
 
-        assert not output.exists(), "CSV should not be created when no papers are relevant"
+        assert _find_csv(tmp_path) is None, "CSV should not be created when no papers are relevant"
 
     @patch("pubmed_screener.pipeline.fetch_pubmed_metadata")
     def test_fetch_error_is_skipped_gracefully(self, mock_fetch, eml_path, tmp_path):
@@ -201,7 +208,7 @@ class TestPipelineRun:
         # Should not raise even though the first fetch fails
         run(
             client=client,
-            eml_path=str(eml_path),
+            pmids=["41795042", "41792186"],
             criterion="Any",
             fields_description="methodology",
             output_path=str(output),
@@ -224,15 +231,16 @@ class TestPipelineRun:
 
         run(
             client=client,
-            eml_path=str(eml_path),
+            pmids=["41795042", "41792186"],
             criterion="Is this about schizophrenia?",
             fields_description="methodology, summary",
             output_path=str(output),
             fulltext=True,
         )
 
-        assert output.exists()
-        rows = list(csv.DictReader(output.open()))
+        csv_path = _find_csv(tmp_path)
+        assert csv_path is not None
+        rows = list(csv.DictReader(csv_path.open()))
         assert len(rows) == 1
         assert rows[0]["text_source"] == "pmc_fulltext"
 
@@ -244,13 +252,115 @@ class TestPipelineRun:
 
         run(
             client=client,
-            eml_path=str(eml_path),
+            pmids=["41795042", "41792186"],
             criterion="Any",
             fields_description="methodology, summary",
             output_path=str(output),
             fulltext=False,
         )
 
-        reader = csv.DictReader(output.open())
+        csv_path = _find_csv(tmp_path)
+        assert csv_path is not None
+        reader = csv.DictReader(csv_path.open())
         assert set(["title", "url", "pmid", "text_source"]).issubset(set(reader.fieldnames))
 
+
+# ---------------------------------------------------------------------------
+# run_geo tests
+# ---------------------------------------------------------------------------
+
+FAKE_GEO_RECORD = {
+    "pmid": "31123247",
+    "accession": "GSE53987",
+    "doi": None,
+    "title": "Microarray profiling of PFC, HPC and STR from subjects with schizophrenia",
+    "abstract": "Summary: Gene expression profiling of postmortem brain tissue.\n\nOverall design: Matched cases and controls.",
+    "mesh_terms": ["Expression profiling by array", "Homo sapiens"],
+    "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE53987",
+    "pmids": ["31123247"],
+    "text_source": "geo_record",
+}
+
+
+class TestRunGeo:
+    def _make_client(self, relevant=True):
+        schema_resp = '{"methodology": "experimental method", "summary": "brief summary"}'
+        screen_resp = json.dumps({"relevant": relevant, "reason": "Matches." if relevant else "Does not match."})
+        responses = [schema_resp, screen_resp]
+        if relevant:
+            responses.append('{"methodology": "Microarray", "summary": "Brain expression study."}')
+        return FakeLLMClient(responses)
+
+    @patch("pubmed_screener.pipeline.fetch_geo_record")
+    def test_relevant_record_writes_csv(self, mock_fetch, tmp_path):
+        mock_fetch.return_value = FAKE_GEO_RECORD
+        client = self._make_client(relevant=True)
+        output = tmp_path / "results.csv"
+
+        run_geo(
+            client=client,
+            accessions=["GSE53987"],
+            criterion="Is this a schizophrenia gene expression study?",
+            fields_description="methodology, summary",
+            output_path=str(output),
+        )
+
+        run_dir = next(tmp_path.iterdir())
+        csv_path = run_dir / "results.csv"
+        assert csv_path.exists()
+        rows = list(csv.DictReader(csv_path.open()))
+        assert len(rows) == 1
+        assert rows[0]["geo_accession"] == "GSE53987"
+        assert rows[0]["pmids"] == "31123247"
+        assert rows[0]["text_source"] == "geo_record"
+
+    @patch("pubmed_screener.pipeline.fetch_geo_record")
+    def test_irrelevant_record_no_csv(self, mock_fetch, tmp_path):
+        mock_fetch.return_value = FAKE_GEO_RECORD
+        client = self._make_client(relevant=False)
+        output = tmp_path / "results.csv"
+
+        run_geo(
+            client=client,
+            accessions=["GSE53987"],
+            criterion="Is this about Arabidopsis?",
+            fields_description="methodology, summary",
+            output_path=str(output),
+        )
+
+        run_dir = next(tmp_path.iterdir())
+        assert not (run_dir / "results.csv").exists()
+
+    @patch("pubmed_screener.pipeline.fetch_geo_record")
+    def test_fetch_error_skipped_gracefully(self, mock_fetch, tmp_path):
+        mock_fetch.side_effect = RuntimeError("GEO unavailable")
+        client = self._make_client(relevant=True)
+        output = tmp_path / "results.csv"
+
+        run_geo(
+            client=client,
+            accessions=["GSE53987"],
+            criterion="Any criterion",
+            fields_description="methodology",
+            output_path=str(output),
+        )
+
+    @patch("pubmed_screener.pipeline.fetch_geo_record")
+    def test_pmid_column_not_duplicated(self, mock_fetch, tmp_path):
+        mock_fetch.return_value = FAKE_GEO_RECORD
+        client = self._make_client(relevant=True)
+        output = tmp_path / "results.csv"
+
+        run_geo(
+            client=client,
+            accessions=["GSE53987"],
+            criterion="Any",
+            fields_description="methodology, summary",
+            output_path=str(output),
+        )
+
+        run_dir = next(tmp_path.iterdir())
+        reader = csv.DictReader((run_dir / "results.csv").open())
+        assert "pmid" not in reader.fieldnames
+        assert "geo_accession" in reader.fieldnames
+        assert "pmids" in reader.fieldnames
