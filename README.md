@@ -1,6 +1,6 @@
 # PubMed Literature Screener
 
-Screens PubMed alert emails for relevant papers and extracts structured information into a CSV. Supports multiple LLM providers and optional full-text retrieval.
+Screens biomedical literature for relevant records and extracts structured information into a CSV. Accepts PubMed alert emails, plain PMID lists, or GEO accession lists. Supports multiple LLM providers and optional full-text retrieval.
 
 ## Setup
 
@@ -21,27 +21,49 @@ cp .env.example .env
 
 ## Usage
 
-Save your PubMed alert email as a `.eml` file (in Gmail: three-dot menu → Download message).
+The tool accepts three input types, auto-detected by file content:
+
+| Input | Format | Example |
+|---|---|---|
+| PubMed alert email | `.eml` file | `alert.eml` |
+| PMID list | plain text, one PMID per line | `pmids.txt` |
+| GEO accession list | plain text, one accession per line | `geo_accessions.txt` |
 
 Use `--default` to run with schizophrenia genomics defaults (no prompts):
 
 ```bash
 pubmed-screener alert.eml --default
+pubmed-screener pmids.txt --default
+pubmed-screener geo_accessions.txt --default
 ```
 
-Or specify criterion and fields interactively:
+Or specify criterion and fields as flags:
+
+```bash
+pubmed-screener pmids.txt \
+  --criterion "Is this about treatment-resistant schizophrenia?" \
+  --fields "methodology, sample_size, treatment, outcomes"
+```
+
+Or interactively (prompted if not provided):
 
 ```bash
 pubmed-screener alert.eml
 ```
 
-Or pass them as flags:
+### GEO accession input
+
+Pass a file of GEO series accessions (GSE, GDS, GSM, or GPL prefixes) to screen GEO records directly. The tool fetches each record's MINiML XML, extracts the summary, overall design, experiment type, and organism, then runs the same LLM screening and extraction pipeline.
 
 ```bash
-pubmed-screener alert.eml --criterion "Is this about treatment-resistant schizophrenia?" --fields "methodology, sample_size, treatment, outcomes"
+pubmed-screener geo_accessions.txt \
+  --criterion "Does this study perturb a transcription factor?" \
+  --fields "organism, experiment_type, tf_perturbed, perturbation_method, summary"
 ```
 
-### Full-text retrieval
+GEO results include `geo_accession` and `pmids` (linked PubMed IDs) columns in place of `pmid`.
+
+### Full-text retrieval (PubMed inputs only)
 
 Use `--fulltext` to screen and extract from full text instead of just the abstract. The pipeline tries each source in order:
 
@@ -66,10 +88,10 @@ The tool supports Anthropic (default), OpenAI, and local Ollama models:
 
 ```bash
 # OpenAI
-pubmed-screener pubmed.eml --default --provider openai --model gpt-4o
+pubmed-screener pmids.txt --default --provider openai --model gpt-4o
 
 # Ollama (local)
-pubmed-screener pubmed.eml --default --provider ollama --model llama3
+pubmed-screener pmids.txt --default --provider ollama --model llama3
 ```
 
 You can also set `LLM_PROVIDER` and `LLM_MODEL` as environment variables.
@@ -78,10 +100,10 @@ You can also set `LLM_PROVIDER` and `LLM_MODEL` as environment variables.
 
 Each run creates a timestamped directory (e.g. `run_20260313_142000/`) containing:
 
-- `results.csv` — one row per relevant paper
-- `artifacts/<pmid>/` — per-paper folder with the text sent to the LLM, metadata, and any retrieved full-text files
+- `results.csv` — one row per relevant record
+- `artifacts/<id>/` — per-record folder with the text sent to the LLM, metadata, and any retrieved full-text files
 
-With `--default`, the CSV columns are:
+With `--default` on PubMed inputs, the CSV columns are:
 
 | Column | Description |
 |---|---|
@@ -96,29 +118,11 @@ With `--default`, the CSV columns are:
 | `genetics_claims` | Claims about specific genes, loci, or pathways |
 | `summary` | 2-3 sentence plain-language summary for triage |
 
-With custom fields, columns are derived from whatever fields you specify.
+For GEO inputs, `pmid` is replaced by `geo_accession` and `pmids`.
 
 The CSV can be imported directly into Google Sheets (File → Import).
-
-## Pipeline
-
-```mermaid
-flowchart TD
-    A[PubMed alert .eml] --> B[Extract PMIDs]
-    B --> C[Build output schema\nfrom field descriptions]
-    C --> D{For each PMID}
-    D --> E[Fetch abstract +\nMeSH terms from NCBI]
-    E --> F{--fulltext?}
-    F -- No --> I
-    F -- Yes --> G[Try PMC → preprint\n→ Unpaywall → abstract]
-    G --> I[Screen paper\nLLM]
-    I --> J{Relevant?}
-    J -- No --> K[Skip]
-    J -- Yes --> L[Extract fields\nLLM]
-    L --> D
-    D -- Done --> M[Write CSV + artifacts]
-```
 
 ## Known Limitations
 
 - Papers without abstracts or accessible full text are skipped silently.
+- Full-text retrieval (`--fulltext`) applies to PubMed inputs only; GEO records use the record metadata directly.
