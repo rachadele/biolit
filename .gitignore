@@ -14,3 +14,4 @@ run_*/
 .idea*
 PACKAGE_STRUCTURE.md
 *.egg-info/
+.claude/
