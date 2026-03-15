@@ -126,6 +126,78 @@ For GEO inputs, `pmid` is replaced by `geo_accession` and `pmids`.
 
 The CSV can be imported directly into Google Sheets (File → Import).
 
+## MCP server
+
+`biolit` ships an MCP server that exposes the pipeline as tools for any MCP-compatible client (Claude Desktop, Claude CLI, OpenAI Agents SDK, etc.).
+
+Start the server:
+
+```bash
+biolit-mcp
+```
+
+Or test interactively with the MCP inspector:
+
+```bash
+mcp dev biolit/mcp_server.py
+```
+
+### Configure Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "biolit": {
+      "command": "biolit-mcp"
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The tools will appear in the tool picker.
+
+### Configure Claude CLI
+
+Add a `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "biolit": {
+      "command": "biolit-mcp"
+    }
+  }
+}
+```
+
+### Available tools
+
+| Tool | Description |
+|---|---|
+| `search_pubmed` | Fetch PubMed metadata by PMID |
+| `fetch_geo_record` | Fetch and parse a GEO record by accession |
+| `fetch_fulltext` | Retrieve full text for a PMID |
+| `screen_by_pmid` | Fetch + screen a PubMed paper in one call |
+| `screen_by_geo` | Fetch + screen a GEO record in one call |
+| `screen_paper` | LLM relevance screen given pre-fetched text |
+| `extract_fields` | Structured field extraction given pre-fetched text |
+| `read_pmids_from_eml` | Parse PMIDs from a PubMed alert `.eml` file |
+
+### Use as a Python library
+
+`screen_by_pmid` and `screen_by_geo` are also importable directly:
+
+```python
+from biolit.pipeline import screen_by_pmid, screen_by_geo
+from biolit.llm import get_llm_client
+
+client = get_llm_client("anthropic")
+result = screen_by_pmid(client, "41627908", "Is this about schizophrenia genomics?")
+# {"relevant": True, "reason": "...", "text_source": "abstract"}
+```
+
 ## Known Limitations
 
 - Papers without abstracts or accessible full text are skipped silently.

@@ -139,6 +139,56 @@ def resolve_fulltext(
 
 
 # ---------------------------------------------------------------------------
+# Single-record convenience functions
+# ---------------------------------------------------------------------------
+
+def screen_by_pmid(
+    client: BaseLLMClient,
+    pmid: str,
+    criterion: str,
+    fulltext: bool = False,
+    unpaywall_email: str | None = None,
+) -> dict:
+    """Fetch a PubMed paper and screen it for relevance in one call.
+
+    Returns the screening result dict plus a ``text_source`` key.
+    """
+    paper = fetch_pubmed_metadata(pmid)
+    if paper is None:
+        return {"error": f"No record found for PMID {pmid}"}
+
+    if fulltext:
+        text, source, _ = resolve_fulltext(paper, unpaywall_email=unpaywall_email)
+    else:
+        text = paper.get("abstract", "")
+        source = "abstract"
+
+    result = screen_paper(client, paper, criterion, text)
+    result["text_source"] = source
+    return result
+
+
+def screen_by_geo(
+    client: BaseLLMClient,
+    accession: str,
+    criterion: str,
+) -> dict:
+    """Fetch a GEO record and screen it for relevance in one call.
+
+    Returns the screening result dict plus a ``text_source`` key.
+    """
+    record = fetch_geo_record(accession)
+    if record is None:
+        return {"error": f"No record found for accession {accession}"}
+
+    text = record.get("abstract", "")
+    paper = {"title": record.get("title", accession), "mesh_terms": []}
+    result = screen_paper(client, paper, criterion, text)
+    result["text_source"] = "geo_metadata"
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
