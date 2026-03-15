@@ -21,10 +21,32 @@ DEFAULT_FIELDS = "methodology, sample_type, causal_claims, genetics_claims, summ
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
+        prog="biolit",
         description=(
-            "Screen PubMed alert emails with a configurable criterion and output fields. "
-            "Supports multiple LLM providers and optional full-text fetching."
-        )
+            "LLM-assisted biomedical literature screening and extraction. "
+            "Accepts PubMed alert emails (.eml), plain PMID lists, or GEO accession lists. "
+            "Screens each record for relevance, then extracts structured fields into a CSV."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  biolit alert.eml --default\n"
+            "  biolit pmids.txt --default\n"
+            "  biolit --pmids 41795042,41792186 --default\n"
+            "  biolit geo_accessions.txt --default\n"
+            "  biolit --accessions GSE53987 --default\n"
+            "  biolit alert.eml --default --fulltext --unpaywall-email you@example.com\n"
+            "  biolit pmids.txt --criterion 'Is this about treatment-resistant schizophrenia?' "
+            "--fields 'methodology, sample_size, outcomes'\n"
+            "\n"
+            "Environment variables:\n"
+            "  ANTHROPIC_API_KEY   Required for Anthropic provider (default)\n"
+            "  OPENAI_API_KEY      Required for OpenAI provider\n"
+            "  NCBI_API_KEY        Optional; increases NCBI rate limits\n"
+            "  UNPAYWALL_EMAIL     Required when using --fulltext\n"
+            "  LLM_PROVIDER        Default provider if --provider not set\n"
+            "  LLM_MODEL           Default model if --model not set\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "input_file", nargs="?", default=None,

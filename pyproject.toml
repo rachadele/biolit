@@ -7,7 +7,7 @@ name = "biolit"
 version = "0.1.0"
 description = "LLM-assisted biomedical literature screening and structured extraction for PubMed and GEO."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
     { name = "Rachel Schwartz", email = "raschwaaa@gmail.com" }
 ]
@@ -15,7 +15,6 @@ requires-python = ">=3.8"
 keywords = ["pubmed", "geo", "literature-review", "llm", "bioinformatics", "genomics", "mcp"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
@@ -31,5 +30,10 @@ dependencies = [
 [project.scripts]
 biolit = "biolit.cli:main"
 
+[tool.setuptools.packages.find]
+include = ["biolit*"]
+
 [project.urls]
-Repository = "https://github.com/rachadele/lit-search-agent"
+Repository = "https://github.com/rachadele/pubmed-screener"
+Homepage = "https://github.com/rachadele/pubmed-screener#readme"
+Changelog = "https://github.com/rachadele/pubmed-screener/blob/main/CHANGELOG.md"
