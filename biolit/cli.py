@@ -6,7 +6,7 @@ import sys
 from dotenv import load_dotenv
 
 from biolit.llm import get_llm_client
-from biolit.pipeline import run, run_geo
+from biolit.pipeline import run, run_geo, screen_by_pmid, screen_by_geo
 from biolit.parsers.utils import DEFAULT_MAX_CHARS
 from biolit.utils import read_eml_body, extract_pmids, read_pmids_file, read_geo_file
 
@@ -20,6 +20,69 @@ DEFAULT_FIELDS = "methodology, sample_type, causal_claims, genetics_claims, summ
 
 
 def main(argv: list[str] | None = None) -> None:
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "screen":
+        return _screen_main(argv[1:])
+    return _run_main(argv)
+
+
+def _screen_main(argv: list[str] | None = None) -> None:
+    """biolit screen — quickly screen a single PMID or GEO accession."""
+    import json
+
+    parser = argparse.ArgumentParser(
+        prog="biolit screen",
+        description="Screen a single paper or GEO record for relevance.",
+        epilog=(
+            "Examples:\n"
+            "  biolit screen --pmid 41627908 --default\n"
+            "  biolit screen --accession GSE53987 --default\n"
+            "  biolit screen --pmid 41627908 --criterion 'Is this about GWAS?'\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    id_group = parser.add_mutually_exclusive_group(required=True)
+    id_group.add_argument("--pmid", help="PubMed ID to screen")
+    id_group.add_argument("--accession", help="GEO accession to screen")
+    parser.add_argument("--criterion", default=None, help="Relevance question (yes/no)")
+    parser.add_argument("--default", action="store_true", help="Use schizophrenia genomics criterion")
+    parser.add_argument("--fulltext", action="store_true", help="Fetch full text before screening (PMID only)")
+    parser.add_argument("--unpaywall-email", default=os.environ.get("UNPAYWALL_EMAIL"))
+    parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "anthropic"),
+                        choices=["anthropic", "openai", "ollama"])
+    parser.add_argument("--model", default=os.environ.get("LLM_MODEL"))
+
+    args = parser.parse_args(argv)
+
+    criterion = DEFAULT_CRITERION if args.default else args.criterion
+    if not criterion:
+        criterion = input("Screening criterion (yes/no question about relevance): ").strip()
+
+    try:
+        client = get_llm_client(args.provider, args.model)
+    except (EnvironmentError, ImportError) as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+    if args.pmid:
+        result = screen_by_pmid(client, args.pmid, criterion,
+                                fulltext=args.fulltext,
+                                unpaywall_email=args.unpaywall_email)
+    else:
+        result = screen_by_geo(client, args.accession, criterion)
+
+    relevant = result.get("relevant")
+    reason = result.get("reason", "")
+    source = result.get("text_source", "")
+    status = "RELEVANT" if relevant else "NOT RELEVANT"
+    print(f"{status} [{source}] — {reason}")
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        sys.exit(1)
+
+
+def _run_main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="biolit",
         description=(

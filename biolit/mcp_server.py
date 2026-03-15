@@ -27,6 +27,8 @@ from biolit.pipeline import (
     build_output_schema,
     extract_fields as _extract_fields,
     resolve_fulltext,
+    run as _run,
+    run_geo as _run_geo,
     screen_paper as _screen_paper,
     screen_by_pmid as _screen_by_pmid,
     screen_by_geo as _screen_by_geo,
@@ -212,6 +214,79 @@ def screen_by_geo(
          "text_source": "geo_metadata"}
     """
     return _screen_by_geo(_llm, accession, criterion)
+
+
+@mcp.tool()
+def run_pipeline(
+    pmids: str,
+    criterion: str,
+    fields: str,
+    output_path: str = "results.csv",
+    fulltext: bool = False,
+    unpaywall_email: str = "",
+) -> dict:
+    """Run the full screen + extract pipeline on a list of PMIDs and write a CSV.
+
+    This is equivalent to running `biolit --pmids ... --criterion ... --fields ...`
+    from the command line.
+
+    Args:
+        pmids: Comma-separated PubMed IDs.
+        criterion: Relevance screening question.
+        fields: Comma-separated field names to extract, e.g.
+            "methodology, sample_type, causal_claims, summary"
+        output_path: Path for the output CSV (default: results.csv).
+            A timestamped run directory is created alongside it.
+        fulltext: If True, attempt full-text retrieval before screening.
+        unpaywall_email: Email for the Unpaywall API (only used when fulltext=True).
+
+    Returns:
+        {"output_path": "...", "relevant_count": N}
+    """
+    pmid_list = [p.strip() for p in pmids.split(",") if p.strip()]
+    email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
+    _run(
+        client=_llm,
+        pmids=pmid_list,
+        criterion=criterion,
+        fields_description=fields,
+        output_path=output_path,
+        fulltext=fulltext,
+        unpaywall_email=email,
+    )
+    return {"output_path": output_path, "pmid_count": len(pmid_list)}
+
+
+@mcp.tool()
+def run_geo_pipeline(
+    accessions: str,
+    criterion: str,
+    fields: str,
+    output_path: str = "results.csv",
+) -> dict:
+    """Run the full screen + extract pipeline on a list of GEO accessions and write a CSV.
+
+    This is equivalent to running `biolit --accessions ... --criterion ... --fields ...`
+    from the command line.
+
+    Args:
+        accessions: Comma-separated GEO accessions (e.g. "GSE53987,GSE12345").
+        criterion: Relevance screening question.
+        fields: Comma-separated field names to extract.
+        output_path: Path for the output CSV (default: results.csv).
+
+    Returns:
+        {"output_path": "...", "accession_count": N}
+    """
+    accession_list = [a.strip() for a in accessions.split(",") if a.strip()]
+    _run_geo(
+        client=_llm,
+        accessions=accession_list,
+        criterion=criterion,
+        fields_description=fields,
+        output_path=output_path,
+    )
+    return {"output_path": output_path, "accession_count": len(accession_list)}
 
 
 @mcp.tool()
