@@ -25,10 +25,12 @@ dependencies = [
     "python-dotenv",
     "lxml",
     "pdfminer.six",
+    "mcp[cli]",
 ]
 
 [project.scripts]
 biolit = "biolit.cli:main"
+biolit-mcp = "biolit.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["biolit*"]

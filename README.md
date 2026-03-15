@@ -55,6 +55,23 @@ Or interactively (prompted if not provided):
 biolit alert.eml
 ```
 
+### Single-record screening
+
+Use `biolit screen` to quickly check one paper or GEO record for relevance without running the full extraction pipeline:
+
+```bash
+biolit screen --pmid 41627908 --default
+biolit screen --accession GSE53987 --default
+biolit screen --pmid 41627908 --criterion "Is this about treatment-resistant schizophrenia?"
+biolit screen --pmid 41627908 --fulltext --default
+```
+
+Output is a single line to stdout:
+
+```
+RELEVANT [abstract] — Paper uses GWAS to investigate schizophrenia risk loci.
+```
+
 ### GEO accession input
 
 Pass a file of GEO series accessions (GSE, GDS, GSM, or GPL prefixes) to screen GEO records directly. The tool fetches each record's MINiML XML, extracts the summary, overall design, experiment type, and organism, then runs the same LLM screening and extraction pipeline.
@@ -125,6 +142,97 @@ With `--default` on PubMed inputs, the CSV columns are:
 For GEO inputs, `pmid` is replaced by `geo_accession` and `pmids`.
 
 The CSV can be imported directly into Google Sheets (File → Import).
+
+## MCP server
+
+`biolit` ships an MCP server that exposes the pipeline as tools for any MCP-compatible client (Claude Desktop, Claude CLI, OpenAI Agents SDK, etc.).
+
+Start the server:
+
+```bash
+biolit-mcp
+```
+
+Or test interactively with the MCP inspector:
+
+```bash
+mcp dev biolit/mcp_server.py
+```
+
+### Configure Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "biolit": {
+      "command": "biolit-mcp"
+    }
+  }
+}
+```
+
+Restart Claude Desktop. The tools will appear in the tool picker.
+
+### Configure Claude CLI
+
+Add a `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "biolit": {
+      "command": "biolit-mcp"
+    }
+  }
+}
+```
+
+### Available tools
+
+**Batch pipelines** (equivalent to the `biolit` CLI):
+
+| Tool | Description |
+|---|---|
+| `run_pipeline` | Screen + extract a list of PMIDs, write results CSV |
+| `run_geo_pipeline` | Screen + extract a list of GEO accessions, write results CSV |
+
+**Single-record** (equivalent to `biolit screen`):
+
+| Tool | Description |
+|---|---|
+| `screen_by_pmid` | Fetch + screen a PubMed paper in one call |
+| `screen_by_geo` | Fetch + screen a GEO record in one call |
+
+**Low-level** (for custom workflows):
+
+| Tool | Description |
+|---|---|
+| `search_pubmed` | Fetch PubMed metadata by PMID |
+| `fetch_geo_record` | Fetch and parse a GEO record by accession |
+| `fetch_fulltext` | Retrieve full text for a PMID |
+| `screen_paper` | LLM relevance screen given pre-fetched text |
+| `extract_fields` | Structured field extraction given pre-fetched text |
+| `read_pmids_from_eml` | Parse PMIDs from a PubMed alert `.eml` file |
+
+### Use as a Python library
+
+The pipeline functions are importable directly:
+
+```python
+from biolit.pipeline import screen_by_pmid, screen_by_geo, run, run_geo
+from biolit.llm import get_llm_client
+
+client = get_llm_client("anthropic")
+
+# Single-record screen
+result = screen_by_pmid(client, "41627908", "Is this about schizophrenia genomics?")
+# {"relevant": True, "reason": "...", "text_source": "abstract"}
+
+# Batch pipeline
+run(client, pmids=["41627908", "33741721"], criterion="...", fields_description="methodology, summary", output_path="results.csv")
+```
 
 ## Known Limitations
 
