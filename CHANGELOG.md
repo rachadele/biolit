@@ -2,13 +2,6 @@
 
 All notable changes to `biolit` are documented here.
 
-## [0.1.3] — 2026-03-15
-
-### Added
-- **`biolit screen` subcommand** — quickly screen a single PMID or GEO accession for relevance without running the full extraction pipeline; supports `--default`, `--criterion`, and `--fulltext`
-- **`run_pipeline` and `run_geo_pipeline` MCP tools** — batch screen + extract pipeline exposed as MCP tools, equivalent to running `biolit` from the CLI
-- Updated README with `biolit screen` usage and reorganised MCP tools table into batch, single-record, and low-level groups
-
 ## [0.1.2] — 2026-03-15
 
 ### Added
@@ -23,6 +16,9 @@ All notable changes to `biolit` are documented here.
   - `read_pmids_from_eml` — parse PMIDs from a PubMed alert `.eml` file
 - **`screen_by_pmid` and `screen_by_geo`** added to `pipeline.py` as public library functions (importable without the MCP layer)
 - `mcp[cli]` dependency added to `pyproject.toml`
+- **`biolit screen` subcommand** — quickly screen a single PMID or GEO accession for relevance without running the full extraction pipeline; supports `--default`, `--criterion`, and `--fulltext`
+- **`run_pipeline` and `run_geo_pipeline` MCP tools** — batch screen + extract pipeline exposed as MCP tools, equivalent to running `biolit` from the CLI
+- Updated README with `biolit screen` usage and reorganised MCP tools table into batch, single-record, and low-level groups
 
 ## [0.1.1] — 2026-03-15
 
