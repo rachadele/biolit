@@ -2,6 +2,13 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.1] — 2026-03-15
+
+### Documentation
+- Improved `--help` output: updated description, added usage examples and environment variable reference
+- Added `CHANGELOG.md`
+- Linked changelog from `pyproject.toml`
+
 ## [0.1.0] — 2026-03-15
 
 Initial PyPI release. Renamed package from `pubmed_screener` to `biolit`.
