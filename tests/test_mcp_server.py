@@ -10,6 +10,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# mcp_server.py initialises _llm at import time, which requires ANTHROPIC_API_KEY.
+# Set a dummy value before the module is imported so CI doesn't raise EnvironmentError.
+# All tests mock the underlying functions so the fake key is never used.
+os.environ.setdefault("ANTHROPIC_API_KEY", "test-key-ci")
+
 
 # ---------------------------------------------------------------------------
 # Module import helpers
