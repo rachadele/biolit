@@ -2,6 +2,32 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.5] — 2026-03-16
+
+### Fixed
+- `test_mcp_server.py` now sets a dummy `ANTHROPIC_API_KEY` before importing `biolit.mcp_server`, fixing CI failures where the module-level LLM client initialisation raised `EnvironmentError` in environments without the key set
+
+## [0.1.4] — 2026-03-16
+
+### Added
+- **Europe PMC fetcher** (`biolit/fetchers/europepmc.py`) — retrieves JATS XML from Europe PMC by PMID or DOI; used as step 2 in the full-text chain, after PMC JATS and before preprints
+- **Semantic Scholar fetcher** (`biolit/fetchers/semantic_scholar.py`) — looks up open-access PDFs via the Semantic Scholar API (`get_s2_pdf_url`, `fetch_s2_pdf`); used as step 5 in the full-text chain; authenticates via `SEMANTIC_SCHOLAR_API_KEY` env var if set
+- **DOI support in `biolit/fetchers/pubmed.py`** — added `_idconv_lookup`, `doi_to_pmid`, and `doi_to_pmcid` helpers using the NCBI ID Converter API
+- **`fetch_preprint_metadata`** in `biolit/fetchers/preprints.py` — returns title + abstract from the bioRxiv/medRxiv API when JATS XML is blocked by Cloudflare (last-resort fallback for preprint DOIs)
+- **`10.64898/` DOI prefix** recognised as a preprint DOI in `_is_preprint_doi` (new bioRxiv prefix introduced in 2025)
+- **`screen_by_doi`** pipeline function — screens a paper by DOI with its own fallback chain: preprint JATS XML → Europe PMC → Unpaywall PDF → Semantic Scholar PDF → preprint abstract API
+- **DOI support in `biolit screen`** — `--doi` flag screens a paper by DOI without needing a PMID
+- **DOI file input** — positional file input whose first line starts with `10.` is auto-detected as a DOI list; DOIs are resolved to PMIDs via NCBI and unresolvable ones are sent through `screen_by_doi` directly
+- **`--dois` flag** — inline comma-separated DOIs as an alternative to `--pmids`
+- **Three new MCP tools:**
+  - `resolve_doi` — resolves a DOI to PMID + PMCID via the NCBI ID Converter
+  - `screen_by_doi` — fetches and screens a paper by DOI in one call
+  - `lookup_s2_pdf` — checks whether Semantic Scholar has an open-access PDF for a DOI
+
+### Changed
+- **Full-text retrieval chain** extended from 4 to 6 steps: PMC JATS XML → Europe PMC JATS XML → Preprint XML → Unpaywall PDF → Semantic Scholar PDF → Abstract fallback
+- `fetch_fulltext` MCP tool docstring updated to reflect the expanded source chain
+
 ## [0.1.2] — 2026-03-15
 
 ### Added

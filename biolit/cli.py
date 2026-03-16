@@ -5,8 +5,9 @@ import sys
 
 from dotenv import load_dotenv
 
+from biolit.fetchers.pubmed import doi_to_pmid
 from biolit.llm import get_llm_client
-from biolit.pipeline import run, run_geo, screen_by_pmid, screen_by_geo
+from biolit.pipeline import run, run_geo, screen_by_pmid, screen_by_geo, screen_by_doi
 from biolit.parsers.utils import DEFAULT_MAX_CHARS
 from biolit.utils import read_eml_body, extract_pmids, read_pmids_file, read_geo_file
 
@@ -44,6 +45,7 @@ def _screen_main(argv: list[str] | None = None) -> None:
     )
     id_group = parser.add_mutually_exclusive_group(required=True)
     id_group.add_argument("--pmid", help="PubMed ID to screen")
+    id_group.add_argument("--doi", help="DOI to screen (resolved to PMID via NCBI)")
     id_group.add_argument("--accession", help="GEO accession to screen")
     parser.add_argument("--criterion", default=None, help="Relevance question (yes/no)")
     parser.add_argument("--default", action="store_true", help="Use schizophrenia genomics criterion")
@@ -65,7 +67,18 @@ def _screen_main(argv: list[str] | None = None) -> None:
         print(f"Error: {e}")
         sys.exit(1)
 
-    if args.pmid:
+    if args.doi:
+        pmid = doi_to_pmid(args.doi)
+        if pmid:
+            print(f"Resolved {args.doi} → PMID {pmid}")
+            result = screen_by_pmid(client, pmid, criterion,
+                                    fulltext=args.fulltext,
+                                    unpaywall_email=args.unpaywall_email)
+        else:
+            print(f"Could not resolve {args.doi} to a PMID — fetching directly by DOI")
+            result = screen_by_doi(client, args.doi, criterion,
+                                   unpaywall_email=args.unpaywall_email)
+    elif args.pmid:
         result = screen_by_pmid(client, args.pmid, criterion,
                                 fulltext=args.fulltext,
                                 unpaywall_email=args.unpaywall_email)
@@ -118,6 +131,10 @@ def _run_main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--pmids", default=None,
         help="Comma-separated PMIDs (alternative to input_file)",
+    )
+    parser.add_argument(
+        "--dois", default=None,
+        help="Comma-separated DOIs (alternative to input_file; resolved to PMIDs via NCBI)",
     )
     parser.add_argument(
         "--accessions", default=None,
@@ -205,8 +222,8 @@ def _run_main(argv: list[str] | None = None) -> None:
     print(f"Using LLM: {client}\n")
 
     # Resolve input — CLI flags take priority over file
-    if not args.input_file and not args.pmids and not args.accessions:
-        print("Error: provide an input_file, --pmids, or --accessions.")
+    if not args.input_file and not args.pmids and not args.dois and not args.accessions:
+        print("Error: provide an input_file, --pmids, --dois, or --accessions.")
         sys.exit(1)
 
     if args.accessions:
@@ -217,6 +234,10 @@ def _run_main(argv: list[str] | None = None) -> None:
         input_type = "pubmed"
         pmids = [p.strip() for p in args.pmids.split(",") if p.strip()]
         print(f"Using {len(pmids)} PMIDs from --pmids\n")
+    elif args.dois:
+        input_type = "pubmed"
+        dois = [d.strip() for d in args.dois.split(",") if d.strip()]
+        pmids = _resolve_dois(dois)
     elif args.input_file.endswith(".eml"):
         input_type = "pubmed"
         body = read_eml_body(args.input_file)
@@ -228,6 +249,10 @@ def _run_main(argv: list[str] | None = None) -> None:
             input_type = "geo"
             accessions = read_geo_file(args.input_file)
             print(f"Read {len(accessions)} GEO accessions from {args.input_file}\n")
+        elif first_value and first_value.startswith("10."):
+            input_type = "pubmed"
+            dois = [l.strip() for l in open(args.input_file) if l.strip() and not l.startswith("#")]
+            pmids = _resolve_dois(dois)
         else:
             input_type = "pubmed"
             pmids = read_pmids_file(args.input_file)
@@ -265,6 +290,20 @@ def _run_main(argv: list[str] | None = None) -> None:
             sections_wanted=sections_wanted,
             max_chars=args.max_chars,
         )
+
+
+def _resolve_dois(dois: list[str]) -> list[str]:
+    """Convert a list of DOIs to PMIDs, skipping any that can't be resolved."""
+    pmids = []
+    for doi in dois:
+        pmid = doi_to_pmid(doi)
+        if pmid:
+            print(f"  {doi} → PMID {pmid}")
+            pmids.append(pmid)
+        else:
+            print(f"  {doi} → could not resolve (skipped)")
+    print(f"Resolved {len(pmids)}/{len(dois)} DOIs to PMIDs\n")
+    return pmids
 
 
 def _peek_first_value(path: str) -> str | None:
