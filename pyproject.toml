@@ -36,6 +36,6 @@ biolit-mcp = "biolit.mcp_server:main"
 include = ["biolit*"]
 
 [project.urls]
-Repository = "https://github.com/rachadele/pubmed-screener"
-Homepage = "https://github.com/rachadele/pubmed-screener#readme"
-Changelog = "https://github.com/rachadele/pubmed-screener/blob/main/CHANGELOG.md"
+Repository = "https://github.com/rachadele/biolit"
+Homepage = "https://github.com/rachadele/biolit#readme"
+Changelog = "https://github.com/rachadele/biolit/blob/main/CHANGELOG.md"
