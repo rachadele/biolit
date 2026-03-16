@@ -6,7 +6,8 @@ from datetime import datetime
 
 from biolit.fetchers.geo import fetch_geo_record
 from biolit.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext
-from biolit.fetchers.preprints import fetch_preprint
+from biolit.fetchers.europepmc import fetch_europepmc_fulltext
+from biolit.fetchers.preprints import fetch_preprint, fetch_preprint_metadata
 from biolit.fetchers.unpaywall import fetch_via_unpaywall
 from biolit.llm.base import BaseLLMClient
 from biolit.parsers.jats import parse_jats_sections
@@ -93,10 +94,11 @@ def resolve_fulltext(
     """Attempt to fetch full text for *paper*, returning (text, source_label).
 
     Fallback chain:
-      1. PMC JATS XML
-      2. Preprint JATS XML (bioRxiv / medRxiv)
-      3. Unpaywall PDF
-      4. Abstract only
+      1. PMC JATS XML (via NCBI efetch)
+      2. Europe PMC JATS XML (broader open-access coverage)
+      3. Preprint JATS XML (bioRxiv / medRxiv)
+      4. Unpaywall PDF
+      5. Abstract only
 
     *sections_wanted* filters which sections are concatenated (None = all).
     Returns a (text, source) tuple.
@@ -105,7 +107,7 @@ def resolve_fulltext(
     pmid = paper["pmid"]
     doi = paper.get("doi")
 
-    # 1. PMC
+    # 1. PMC (NCBI efetch)
     xml_bytes = fetch_pmc_fulltext(pmid)
     if xml_bytes:
         artifacts["pmc_xml"] = xml_bytes
@@ -113,7 +115,15 @@ def resolve_fulltext(
         if secs:
             return select_sections(secs, sections_wanted, max_chars), "pmc_fulltext", artifacts
 
-    # 2. Preprints
+    # 2. Europe PMC MED/{pmid} — broader open-access coverage beyond NCBI PMC
+    xml_bytes = fetch_europepmc_fulltext(pmid=pmid, doi=doi)
+    if xml_bytes:
+        artifacts["europepmc_xml"] = xml_bytes
+        secs = parse_jats_sections(xml_bytes)
+        if secs:
+            return select_sections(secs, sections_wanted, max_chars), "europepmc_fulltext", artifacts
+
+    # 3. Preprints
     if doi:
         xml_bytes = fetch_preprint(doi)
         if xml_bytes:
@@ -165,6 +175,67 @@ def screen_by_pmid(
 
     result = screen_paper(client, paper, criterion, text)
     result["text_source"] = source
+    return result
+
+
+def screen_by_doi(
+    client: BaseLLMClient,
+    doi: str,
+    criterion: str,
+    unpaywall_email: str | None = None,
+) -> dict:
+    """Fetch a paper by DOI and screen it for relevance.
+
+    Used when a DOI cannot be resolved to a PMID (e.g. preprints).
+    Tries preprint XML → Europe PMC XML → Unpaywall PDF, then falls back
+    to an empty-text screen if nothing is retrievable.
+    """
+    text = ""
+    source = "unavailable"
+
+    xml_bytes = fetch_preprint(doi)
+    if xml_bytes:
+        secs = parse_jats_sections(xml_bytes)
+        if secs:
+            text = select_sections(secs, None, DEFAULT_MAX_CHARS)
+            source = "preprint_fulltext"
+
+    if not text:
+        xml_bytes = fetch_europepmc_fulltext(doi=doi)
+        if xml_bytes:
+            secs = parse_jats_sections(xml_bytes)
+            if secs:
+                text = select_sections(secs, None, DEFAULT_MAX_CHARS)
+                source = "europepmc_fulltext"
+
+    if not text and unpaywall_email:
+        from biolit.parsers.pdf import parse_pdf_sections
+        pdf_bytes = fetch_via_unpaywall(doi, unpaywall_email)
+        if pdf_bytes:
+            try:
+                secs = parse_pdf_sections(pdf_bytes)
+                if secs:
+                    text = select_sections(secs, None, DEFAULT_MAX_CHARS)
+                    source = "unpaywall_pdf"
+            except ImportError:
+                pass
+
+    # Last resort: abstract from the biorxiv/medrxiv API (full text blocked by Cloudflare)
+    title = doi
+    if not text:
+        meta = fetch_preprint_metadata(doi)
+        if meta:
+            text = meta.get("abstract", "")
+            source = "preprint_abstract"
+            title = meta.get("title", doi)
+
+    if not text:
+        return {"error": f"No content retrievable for DOI {doi}"}
+
+    paper = {"title": title, "mesh_terms": []}
+    result = screen_paper(client, paper, criterion, text)
+    result["text_source"] = source
+    result["doi"] = doi
     return result
 
 
@@ -261,6 +332,7 @@ def run(
             ),
         )
         _write_bytes(os.path.join(paper_dir, "pmc_fulltext.xml"), fulltext_artifacts.get("pmc_xml"))
+        _write_bytes(os.path.join(paper_dir, "europepmc_fulltext.xml"), fulltext_artifacts.get("europepmc_xml"))
         _write_bytes(os.path.join(paper_dir, "preprint_fulltext.xml"), fulltext_artifacts.get("preprint_xml"))
         _write_bytes(os.path.join(paper_dir, "unpaywall_fulltext.pdf"), fulltext_artifacts.get("unpaywall_pdf"))
 

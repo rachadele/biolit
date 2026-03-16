@@ -60,21 +60,40 @@ def fetch_pubmed_metadata(pmid: str) -> dict | None:
     }
 
 
-def pmid_to_pmcid(pmid: str) -> str | None:
-    """Convert a PMID to a PMCID via the NCBI ID Converter API."""
+def _idconv_lookup(accession: str) -> dict:
+    """Call the NCBI ID Converter for any accession (PMID, DOI, PMCID).
+
+    Returns the first record dict, or {} on failure.
+    """
     try:
         resp = requests.get(
             IDCONV_URL,
-            params={"ids": pmid, "format": "json"},
+            params={"ids": accession, "format": "json"},
             timeout=10,
         )
         resp.raise_for_status()
         records = resp.json().get("records", [])
-        if records and "pmcid" in records[0]:
-            return records[0]["pmcid"]
+        return records[0] if records else {}
     except Exception:
-        pass
-    return None
+        return {}
+
+
+def pmid_to_pmcid(pmid: str) -> str | None:
+    """Convert a PMID to a PMCID via the NCBI ID Converter API."""
+    return _idconv_lookup(pmid).get("pmcid")
+
+
+def doi_to_pmcid(doi: str) -> str | None:
+    """Convert a DOI to a PMCID via the NCBI ID Converter API."""
+    return _idconv_lookup(doi).get("pmcid")
+
+
+def doi_to_pmid(doi: str) -> str | None:
+    """Convert a DOI to a PMID via the NCBI ID Converter API."""
+    rec = _idconv_lookup(doi)
+    pmid = rec.get("pmid")
+    # ID converter returns pmid as a string integer; normalise to str
+    return str(pmid) if pmid else None
 
 
 def fetch_pmc_fulltext(pmid: str) -> bytes | None:
@@ -82,7 +101,6 @@ def fetch_pmc_fulltext(pmid: str) -> bytes | None:
     pmcid = pmid_to_pmcid(pmid)
     if not pmcid:
         return None
-    # Strip "PMC" prefix for efetch
     numeric_id = pmcid.replace("PMC", "")
     try:
         resp = requests.get(
