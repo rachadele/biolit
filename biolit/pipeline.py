@@ -9,6 +9,7 @@ from biolit.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext
 from biolit.fetchers.europepmc import fetch_europepmc_fulltext
 from biolit.fetchers.preprints import fetch_preprint, fetch_preprint_metadata
 from biolit.fetchers.unpaywall import fetch_via_unpaywall
+from biolit.fetchers.semantic_scholar import fetch_s2_pdf
 from biolit.llm.base import BaseLLMClient
 from biolit.parsers.jats import parse_jats_sections
 from biolit.parsers.pdf import parse_pdf_sections
@@ -98,7 +99,8 @@ def resolve_fulltext(
       2. Europe PMC JATS XML (broader open-access coverage)
       3. Preprint JATS XML (bioRxiv / medRxiv)
       4. Unpaywall PDF
-      5. Abstract only
+      5. Semantic Scholar open-access PDF
+      6. Abstract only
 
     *sections_wanted* filters which sections are concatenated (None = all).
     Returns a (text, source) tuple.
@@ -144,7 +146,19 @@ def resolve_fulltext(
             except ImportError:
                 print("  [warning] pdfminer.six not installed; skipping PDF parsing")
 
-    # 4. Abstract fallback
+    # 5. Semantic Scholar open-access PDF (good coverage of preprints and OA journals)
+    if doi:
+        pdf_bytes = fetch_s2_pdf(doi)
+        if pdf_bytes:
+            artifacts["s2_pdf"] = pdf_bytes
+            try:
+                secs = parse_pdf_sections(pdf_bytes)
+                if secs:
+                    return select_sections(secs, sections_wanted, max_chars), "s2_pdf", artifacts
+            except ImportError:
+                print("  [warning] pdfminer.six not installed; skipping PDF parsing")
+
+    # 6. Abstract fallback
     return paper.get("abstract", ""), "abstract", artifacts
 
 
@@ -209,7 +223,6 @@ def screen_by_doi(
                 source = "europepmc_fulltext"
 
     if not text and unpaywall_email:
-        from biolit.parsers.pdf import parse_pdf_sections
         pdf_bytes = fetch_via_unpaywall(doi, unpaywall_email)
         if pdf_bytes:
             try:
@@ -217,6 +230,17 @@ def screen_by_doi(
                 if secs:
                     text = select_sections(secs, None, DEFAULT_MAX_CHARS)
                     source = "unpaywall_pdf"
+            except ImportError:
+                pass
+
+    if not text:
+        pdf_bytes = fetch_s2_pdf(doi)
+        if pdf_bytes:
+            try:
+                secs = parse_pdf_sections(pdf_bytes)
+                if secs:
+                    text = select_sections(secs, None, DEFAULT_MAX_CHARS)
+                    source = "s2_pdf"
             except ImportError:
                 pass
 
@@ -335,6 +359,7 @@ def run(
         _write_bytes(os.path.join(paper_dir, "europepmc_fulltext.xml"), fulltext_artifacts.get("europepmc_xml"))
         _write_bytes(os.path.join(paper_dir, "preprint_fulltext.xml"), fulltext_artifacts.get("preprint_xml"))
         _write_bytes(os.path.join(paper_dir, "unpaywall_fulltext.pdf"), fulltext_artifacts.get("unpaywall_pdf"))
+        _write_bytes(os.path.join(paper_dir, "s2_fulltext.pdf"), fulltext_artifacts.get("s2_pdf"))
 
         if not text:
             print("skipped (no content)")

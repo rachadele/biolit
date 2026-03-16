@@ -1,8 +1,9 @@
 """Tests for CLI input detection and dispatch logic."""
 import pathlib
+from unittest.mock import patch, MagicMock
 import pytest
 
-from biolit.cli import _peek_first_value
+from biolit.cli import _peek_first_value, _resolve_dois
 from biolit.utils import read_geo_file, read_pmids_file
 
 REAL_PMIDS = ["41795042", "41792186", "41785323"]
@@ -78,6 +79,40 @@ class TestReadPmidsFile:
         f = tmp_path / "empty.txt"
         f.write_text("")
         assert read_pmids_file(str(f)) == []
+
+
+class TestResolveDois:
+    @patch("biolit.cli.doi_to_pmid")
+    def test_resolves_dois_to_pmids(self, mock_resolve):
+        mock_resolve.side_effect = ["11111111", "22222222"]
+        result = _resolve_dois(["10.1038/a", "10.1038/b"])
+        assert result == ["11111111", "22222222"]
+
+    @patch("biolit.cli.doi_to_pmid")
+    def test_skips_unresolvable_dois(self, mock_resolve):
+        mock_resolve.side_effect = ["11111111", None]
+        result = _resolve_dois(["10.1038/a", "10.9999/bad"])
+        assert result == ["11111111"]
+
+    @patch("biolit.cli.doi_to_pmid")
+    def test_returns_empty_list_when_none_resolve(self, mock_resolve):
+        mock_resolve.return_value = None
+        result = _resolve_dois(["10.9999/bad"])
+        assert result == []
+
+
+class TestDoiFileDetection:
+    def test_doi_file_detected_by_10_prefix(self, tmp_path):
+        f = tmp_path / "dois.txt"
+        f.write_text("10.1038/s41588-021-00974-7\n10.1016/j.biopsych.2021.01.005\n")
+        first = _peek_first_value(str(f))
+        assert first.startswith("10.")
+
+    def test_pmid_file_not_detected_as_doi(self, tmp_path):
+        f = tmp_path / "pmids.txt"
+        f.write_text("41795042\n41792186\n")
+        first = _peek_first_value(str(f))
+        assert not first.startswith("10.")
 
 
 class TestInputTypeDetection:

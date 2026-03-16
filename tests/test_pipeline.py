@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from biolit.llm.base import BaseLLMClient
-from biolit.pipeline import run, run_geo, build_output_schema, screen_paper, extract_fields
+from biolit.pipeline import run, run_geo, build_output_schema, screen_paper, extract_fields, screen_by_doi, resolve_fulltext
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
@@ -364,3 +364,154 @@ class TestRunGeo:
         assert "pmid" not in reader.fieldnames
         assert "geo_accession" in reader.fieldnames
         assert "pmids" in reader.fieldnames
+
+
+# ---------------------------------------------------------------------------
+# screen_by_doi tests
+# ---------------------------------------------------------------------------
+
+FAKE_DOI = "10.64898/2026.03.05.709906"
+
+
+class TestScreenByDoi:
+    def _make_client(self, relevant=True):
+        resp = json.dumps({"relevant": relevant, "reason": "Matches." if relevant else "No."})
+        return FakeLLMClient([resp])
+
+    @patch("biolit.pipeline.fetch_preprint_metadata")
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_preprint")
+    def test_uses_preprint_jats_when_available(
+        self, mock_preprint, mock_epmc, mock_s2, mock_meta, sample_jats_xml
+    ):
+        mock_preprint.return_value = sample_jats_xml
+        client = self._make_client(relevant=True)
+        result = screen_by_doi(client, FAKE_DOI, "Is this relevant?")
+        assert result["text_source"] == "preprint_fulltext"
+        mock_epmc.assert_not_called()
+
+    @patch("biolit.pipeline.fetch_preprint_metadata")
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_preprint")
+    def test_falls_back_to_europepmc(
+        self, mock_preprint, mock_epmc, mock_s2, mock_meta, sample_jats_xml
+    ):
+        mock_preprint.return_value = None
+        mock_epmc.return_value = sample_jats_xml
+        client = self._make_client(relevant=True)
+        result = screen_by_doi(client, FAKE_DOI, "Is this relevant?")
+        assert result["text_source"] == "europepmc_fulltext"
+
+    @patch("biolit.pipeline.fetch_preprint_metadata")
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_preprint")
+    def test_falls_back_to_s2_pdf(
+        self, mock_preprint, mock_epmc, mock_s2, mock_meta, sample_jats_xml
+    ):
+        mock_preprint.return_value = None
+        mock_epmc.return_value = None
+        # parse_pdf_sections needs to return something; patch it too
+        with patch("biolit.pipeline.parse_pdf_sections") as mock_parse:
+            mock_s2.return_value = b"%PDF fake"
+            mock_parse.return_value = {"body": "S2 full text content here."}
+            client = self._make_client(relevant=True)
+            result = screen_by_doi(client, FAKE_DOI, "Is this relevant?")
+        assert result["text_source"] == "s2_pdf"
+
+    @patch("biolit.pipeline.fetch_preprint_metadata")
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_preprint")
+    def test_falls_back_to_preprint_abstract(
+        self, mock_preprint, mock_epmc, mock_s2, mock_meta
+    ):
+        mock_preprint.return_value = None
+        mock_epmc.return_value = None
+        mock_s2.return_value = None
+        mock_meta.return_value = {
+            "title": "LLM curation paper",
+            "abstract": "We used GPT-4o for annotation.",
+            "doi": FAKE_DOI,
+            "server": "biorxiv",
+        }
+        client = self._make_client(relevant=True)
+        result = screen_by_doi(client, FAKE_DOI, "Is this relevant?")
+        assert result["text_source"] == "preprint_abstract"
+
+    @patch("biolit.pipeline.fetch_preprint_metadata")
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_preprint")
+    def test_returns_error_when_no_content(
+        self, mock_preprint, mock_epmc, mock_s2, mock_meta
+    ):
+        mock_preprint.return_value = None
+        mock_epmc.return_value = None
+        mock_s2.return_value = None
+        mock_meta.return_value = None
+        client = self._make_client()
+        result = screen_by_doi(client, FAKE_DOI, "Is this relevant?")
+        assert "error" in result
+
+    @patch("biolit.pipeline.fetch_preprint_metadata")
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_preprint")
+    def test_result_includes_doi(
+        self, mock_preprint, mock_epmc, mock_s2, mock_meta
+    ):
+        mock_preprint.return_value = None
+        mock_epmc.return_value = None
+        mock_s2.return_value = None
+        mock_meta.return_value = {"title": "T", "abstract": "Some abstract.", "doi": FAKE_DOI, "server": "biorxiv"}
+        client = self._make_client(relevant=False)
+        result = screen_by_doi(client, FAKE_DOI, "Is this relevant?")
+        assert result.get("doi") == FAKE_DOI
+
+
+# ---------------------------------------------------------------------------
+# resolve_fulltext — Semantic Scholar step
+# ---------------------------------------------------------------------------
+
+class TestResolveFulltextS2:
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_pmc_fulltext")
+    def test_s2_used_when_all_xml_sources_fail(
+        self, mock_pmc, mock_epmc, mock_s2, sample_pubmed_metadata
+    ):
+        mock_pmc.return_value = None
+        mock_epmc.return_value = None
+        with patch("biolit.pipeline.fetch_preprint", return_value=None), \
+             patch("biolit.pipeline.parse_pdf_sections") as mock_parse:
+            mock_s2.return_value = b"%PDF fake"
+            mock_parse.return_value = {"body": "Full text from S2."}
+            text, source, artifacts = resolve_fulltext(sample_pubmed_metadata)
+        assert source == "s2_pdf"
+        assert "s2_pdf" in artifacts
+
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_pmc_fulltext")
+    def test_s2_not_called_when_pmc_succeeds(
+        self, mock_pmc, mock_epmc, mock_s2, sample_pubmed_metadata, sample_jats_xml
+    ):
+        mock_pmc.return_value = sample_jats_xml
+        resolve_fulltext(sample_pubmed_metadata)
+        mock_s2.assert_not_called()
+
+    @patch("biolit.pipeline.fetch_s2_pdf")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_pmc_fulltext")
+    def test_s2_not_called_when_no_doi(
+        self, mock_pmc, mock_epmc, mock_s2, sample_pubmed_metadata
+    ):
+        paper_no_doi = {**sample_pubmed_metadata, "doi": None}
+        mock_pmc.return_value = None
+        mock_epmc.return_value = None
+        with patch("biolit.pipeline.fetch_preprint", return_value=None):
+            resolve_fulltext(paper_no_doi)
+        mock_s2.assert_not_called()
