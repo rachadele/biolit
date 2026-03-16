@@ -1,6 +1,6 @@
 # biolit
 
-LLM-assisted biomedical literature screening and structured extraction. Accepts PubMed alert emails, plain PMID lists, or GEO accession lists. Supports multiple LLM providers and optional full-text retrieval.
+LLM-assisted biomedical literature screening and structured extraction. Accepts PubMed alert emails, PMID lists, DOI lists, or GEO accession lists. Retrieves full text from PMC, Europe PMC, bioRxiv/medRxiv, Unpaywall, and Semantic Scholar. Supports multiple LLM providers and exposes all functionality as an MCP server.
 
 ## Setup
 
@@ -249,4 +249,7 @@ run(client, pmids=["41627908", "33741721"], criterion="...", fields_description=
 ## Known Limitations
 
 - Papers without abstracts or accessible full text are skipped silently.
-- Full-text retrieval (`--fulltext`) applies to PubMed inputs only; GEO records use the record metadata directly.
+- Full-text retrieval (`--fulltext`) applies to PubMed and DOI inputs only; GEO records always use the record metadata directly.
+- bioRxiv/medRxiv JATS XML is frequently blocked by Cloudflare regardless of headers. The pipeline falls back to the title and abstract from the bioRxiv API (`text_source: preprint_abstract`).
+- DOIs passed via `--dois` or a DOI file are resolved to PMIDs before the batch pipeline runs. DOIs that can't be resolved (e.g. preprints not yet indexed in PubMed) are skipped. Use `biolit screen --doi` to screen an individual unresolvable DOI.
+- The Semantic Scholar API allows roughly 100 unauthenticated requests per day. Set `SEMANTIC_SCHOLAR_API_KEY` in `.env` for higher limits.
