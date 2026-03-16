@@ -6,7 +6,13 @@ LLM-assisted biomedical literature screening and structured extraction. Accepts 
 
 **Requirements:** Python 3.8+
 
-Install the package (creates the `biolit` command):
+Install from PyPI:
+
+```bash
+pip install biolit
+```
+
+Or install from source for development:
 
 ```bash
 pip install -e .
