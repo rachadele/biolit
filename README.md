@@ -34,9 +34,9 @@ The tool accepts several input formats, auto-detected by file extension or conte
 Use `--default` to run with schizophrenia genomics defaults (no prompts):
 
 ```bash
-biolit alert.eml --default
-biolit pmids.txt --default
-biolit geo_accessions.txt --default
+biolit docs/alert.eml --default
+biolit docs/pmids.txt --default
+biolit docs/geo_accessions.txt --default
 biolit --pmids 41795042,41792186 --default
 biolit --accessions GSE53987 --default
 ```
@@ -44,7 +44,7 @@ biolit --accessions GSE53987 --default
 Or specify criterion and fields as flags:
 
 ```bash
-biolit pmids.txt \
+biolit docs/pmids.txt \
   --criterion "Is this about treatment-resistant schizophrenia?" \
   --fields "methodology, sample_size, treatment, outcomes"
 ```
