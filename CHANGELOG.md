@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.11] — 2026-03-17
+
+### Added
+- **Full-text retrieval for GEO records** — GEO accessions now attempt full-text retrieval via their linked PMIDs (using the same PMC → Europe PMC → Unpaywall → S2 chain as regular papers). `text_source` is set to `geo_linked_fulltext` when a full text is found, `geo_linked_abstract` when only an abstract is available, or `geo_record` when no linked paper is accessible (previous behaviour).
+
 ## [0.1.10] — 2026-03-17
 
 ### Changed
