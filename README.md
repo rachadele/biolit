@@ -1,6 +1,6 @@
 # biolit
 
-LLM-assisted biomedical literature screening and structured extraction. Accepts PubMed alert emails, PMID lists, DOI lists, or GEO accession lists. Retrieves full text from PMC, Europe PMC, bioRxiv/medRxiv, Unpaywall, and Semantic Scholar. Supports multiple LLM providers and exposes all functionality as an MCP server.
+LLM-assisted biomedical literature screening and structured extraction. Accepts PubMed alert emails and mixed lists of PMIDs, DOIs, and GEO accessions in any combination. Retrieves full text from PMC, Europe PMC, bioRxiv/medRxiv, Unpaywall, and Semantic Scholar. Supports multiple LLM providers and exposes all functionality as an MCP server.
 
 ## Setup
 
@@ -27,17 +27,13 @@ cp .env.example .env
 
 ## Usage
 
-The tool accepts several input formats, auto-detected by file extension or content:
+The tool accepts a PubMed alert email (`.eml`) or a plain-text file of identifiers, as well as inline identifiers via `--ids`. Identifiers can be PMIDs, DOIs, or GEO accessions — mixed lists are supported in a single run.
 
 | Input | How to pass | Example |
 |---|---|---|
 | PubMed alert email | positional `.eml` file | `alert.eml` |
-| PMID list (file) | positional plain-text file, one PMID per line | `pmids.txt` |
-| DOI list (file) | positional plain-text file, one DOI per line | `dois.txt` |
-| GEO accession list (file) | positional plain-text file, one accession per line | `geo_accessions.txt` |
-| PMIDs (inline) | `--pmids` flag, comma-separated | `--pmids 41795042,41792186` |
-| DOIs (inline) | `--dois` flag, comma-separated | `--dois 10.1038/s41588-021-00974-7` |
-| GEO accessions (inline) | `--accessions` flag, comma-separated | `--accessions GSE53987,GSE12345` |
+| Identifier file (mixed) | positional plain-text file, one per line | `identifiers.txt` |
+| Inline identifiers | `--ids` flag, comma-separated | `--ids 41795042,GSE53987,10.1101/2025.03.17.25324098` |
 
 Use `--default` to run with schizophrenia genomics defaults (no prompts):
 
@@ -45,14 +41,14 @@ Use `--default` to run with schizophrenia genomics defaults (no prompts):
 biolit docs/alert.eml --default
 biolit docs/pmids.txt --default
 biolit docs/geo_accessions.txt --default
-biolit --pmids 41795042,41792186 --default
-biolit --accessions GSE53987 --default
+biolit --ids 41795042,41792186,GSE53987 --default
+biolit --ids 10.1101/2025.03.17.25324098 --default
 ```
 
 Or specify criterion and fields as flags:
 
 ```bash
-biolit docs/pmids.txt \
+biolit identifiers.txt \
   --criterion "Is this about treatment-resistant schizophrenia?" \
   --fields "methodology, sample_size, treatment, outcomes"
 ```
@@ -80,21 +76,23 @@ Output is a single line to stdout:
 RELEVANT [abstract] — Paper uses GWAS to investigate schizophrenia risk loci.
 ```
 
-### GEO accession input
+### Mixed identifier lists
 
-Pass a file of GEO series accessions (GSE, GDS, GSM, or GPL prefixes) to screen GEO records directly. The tool fetches each record's MINiML XML, extracts the summary, overall design, experiment type, and organism, then runs the same LLM screening and extraction pipeline.
+PMIDs, DOIs, and GEO accessions can be freely mixed in a file or via `--ids`. Each identifier is auto-detected by format:
+
+- `41795042` → PMID (all digits)
+- `10.1101/2025.03.17.25324098` → DOI (starts with `10.`)
+- `GSE53987` → GEO accession (starts with `GSE`, `GDS`, `GSM`, or `GPL`)
 
 ```bash
-biolit geo_accessions.txt \
-  --criterion "Does this study perturb a transcription factor?" \
-  --fields "organism, experiment_type, tf_perturbed, perturbation_method, summary"
+biolit --ids 41795042,GSE53987,10.1101/2025.03.17.25324098 --default
 ```
 
-GEO results include `geo_accession` and `pmids` (linked PubMed IDs) columns in place of `pmid`.
+GEO records additionally include a `linked_pmids` column. All record types share `pmid`, `doi`, and `geo_accession` columns (null when not applicable).
 
-### Full-text retrieval (PubMed inputs only)
+### Full-text retrieval (PubMed and DOI inputs)
 
-Full-text retrieval runs automatically for every paper. The pipeline tries each source in order, falling back to the abstract if nothing is available:
+Full-text retrieval runs automatically for every PMID and DOI (including preprints). GEO records use their record metadata directly. The pipeline tries each source in order, falling back to the abstract if nothing is available:
 
 1. PMC JATS XML (open access)
 2. Europe PMC JATS XML (broader open-access coverage)
@@ -136,15 +134,16 @@ Each run creates a timestamped directory (e.g. `run_20260313_142000/`) containin
 - `results.csv` — one row per relevant record
 - `artifacts/<id>/` — per-record folder with the text sent to the LLM, metadata, and any retrieved full-text files
 
-With `--default` on PubMed inputs, the CSV columns are:
+With `--default`, the CSV columns are:
 
 | Column | Description |
 |---|---|
 | `title` | Paper title |
-| `url` | PubMed link |
-| `pmid` | PubMed ID |
-| `doi` | DOI |
-| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`) |
+| `url` | Link to PubMed, GEO, or DOI |
+| `pmid` | PubMed ID (null for unindexed preprints) |
+| `doi` | DOI (null for GEO records) |
+| `geo_accession` | GEO accession (null for non-GEO records) |
+| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `geo_metadata`) |
 | `citation_count` | Citation count from Semantic Scholar (null if not found) |
 | `methodology` | General method (e.g. GWAS, scRNA-seq, proteomics) |
 | `sample_type` | Tissue/sample type and origin |
@@ -152,7 +151,7 @@ With `--default` on PubMed inputs, the CSV columns are:
 | `genetics_claims` | Claims about specific genes, loci, or pathways |
 | `summary` | 2-3 sentence plain-language summary for triage |
 
-For GEO inputs, `pmid` is replaced by `geo_accession` and `pmids`.
+GEO records additionally include a `linked_pmids` column listing all associated PubMed IDs.
 
 The CSV can be imported directly into Google Sheets (File → Import).
 
@@ -204,20 +203,11 @@ Add a `.mcp.json` in your project root:
 
 ### Available tools
 
-**Batch pipelines** (equivalent to the `biolit` CLI):
+**Batch pipeline** (equivalent to the `biolit` CLI):
 
 | Tool | Description |
 |---|---|
-| `run_pipeline` | Screen + extract a list of PMIDs, write results CSV |
-| `run_geo_pipeline` | Screen + extract a list of GEO accessions, write results CSV |
-
-**Single-record** (equivalent to `biolit screen`):
-
-| Tool | Description |
-|---|---|
-| `screen_by_pmid` | Fetch + screen a PubMed paper in one call |
-| `screen_by_doi` | Fetch + screen a paper by DOI in one call (handles preprints with no PMID) |
-| `screen_by_geo` | Fetch + screen a GEO record in one call |
+| `run_pipeline` | Screen + extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV |
 
 **Low-level** (for custom workflows):
 
@@ -237,21 +227,22 @@ Add a `.mcp.json` in your project root:
 The pipeline functions are importable directly:
 
 ```python
-from biolit.pipeline import screen_by_pmid, screen_by_doi, screen_by_geo, run, run_geo
+from biolit.pipeline import run, screen_paper, fetch_record
 from biolit.llm import get_llm_client
 
 client = get_llm_client("anthropic")
 
-# Screen by PMID
-result = screen_by_pmid(client, "41627908", "Is this about schizophrenia genomics?")
-# {"relevant": True, "reason": "...", "text_source": "abstract"}
+# Batch pipeline — PMIDs, DOIs, and GEO accessions can be mixed freely
+# Returns (csv_path, relevant_count)
+csv_path, count = run(client, ids=["41627908", "GSE53987", "10.1101/2025.03.17.25324098"],
+    criterion="...", fields_description="methodology, summary", output_path="results.csv")
 
-# Screen by DOI (works for preprints without a PMID)
-result = screen_by_doi(client, "10.64898/2026.02.16.706214", "Is this about schizophrenia genomics?")
-# {"relevant": True, "reason": "...", "text_source": "preprint_abstract", "doi": "..."}
+# Fetch a single record (auto-detects PMID / DOI / GEO)
+paper = fetch_record("10.1101/2025.03.17.25324098")
 
-# Batch pipeline
-run(client, pmids=["41627908", "33741721"], criterion="...", fields_description="methodology, summary", output_path="results.csv")
+# Screen pre-fetched text
+result = screen_paper(client, paper, "Is this about schizophrenia genomics?", paper["abstract"])
+# {"relevant": True, "reason": "..."}
 ```
 
 ## Known Limitations
@@ -259,5 +250,4 @@ run(client, pmids=["41627908", "33741721"], criterion="...", fields_description=
 - Papers without abstracts or accessible full text are skipped silently.
 - Full-text retrieval applies to PubMed and DOI inputs only; GEO records always use the record metadata directly.
 - bioRxiv/medRxiv JATS XML is frequently blocked by Cloudflare regardless of headers. The pipeline falls back to the title and abstract from the bioRxiv API (`text_source: preprint_abstract`).
-- DOIs passed via `--dois` or a DOI file are resolved to PMIDs before the batch pipeline runs. DOIs that can't be resolved (e.g. preprints not yet indexed in PubMed) are skipped. Use `biolit screen --doi` to screen an individual unresolvable DOI.
 - The Semantic Scholar API allows roughly 100 unauthenticated requests per day. Set `SEMANTIC_SCHOLAR_API_KEY` in `.env` for higher limits.

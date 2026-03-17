@@ -29,11 +29,7 @@ from biolit.pipeline import (
     extract_fields as _extract_fields,
     resolve_fulltext,
     run as _run,
-    run_geo as _run_geo,
     screen_paper as _screen_paper,
-    screen_by_pmid as _screen_by_pmid,
-    screen_by_doi as _screen_by_doi,
-    screen_by_geo as _screen_by_geo,
 )
 from biolit.utils import extract_pmids, read_eml_body
 
@@ -176,52 +172,6 @@ def extract_fields(
 
 
 @mcp.tool()
-def screen_by_pmid(
-    pmid: str,
-    criterion: str,
-    unpaywall_email: str = "",
-) -> dict:
-    """Fetch a PubMed paper and screen it for relevance in one step.
-
-    Full-text retrieval is always attempted (PMC → Europe PMC → preprint →
-    Unpaywall PDF → Semantic Scholar PDF), falling back to the abstract if
-    nothing is available.
-
-    Args:
-        pmid: PubMed ID.
-        criterion: A yes/no relevance question, e.g.
-            "Is this paper specifically about schizophrenia genomics?"
-        unpaywall_email: Your email for the Unpaywall API.
-            Falls back to UNPAYWALL_EMAIL env var.
-
-    Returns:
-        {"relevant": true | false, "reason": "one sentence",
-         "text_source": "abstract" | "pmc_fulltext" | ...}
-    """
-    email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
-    return _screen_by_pmid(_llm, pmid, criterion, unpaywall_email=email)
-
-
-@mcp.tool()
-def screen_by_geo(
-    accession: str,
-    criterion: str,
-) -> dict:
-    """Fetch a GEO record and screen it for relevance in one step.
-
-    Args:
-        accession: GEO accession (e.g. GSE123456).
-        criterion: A yes/no relevance question, e.g.
-            "Is this dataset about schizophrenia?"
-
-    Returns:
-        {"relevant": true | false, "reason": "one sentence",
-         "text_source": "geo_metadata"}
-    """
-    return _screen_by_geo(_llm, accession, criterion)
-
-
-@mcp.tool()
 def resolve_doi(doi: str) -> dict:
     """Resolve a DOI to a PMID and/or PMCID via the NCBI ID Converter.
 
@@ -238,33 +188,6 @@ def resolve_doi(doi: str) -> dict:
         "pmid": doi_to_pmid(doi),
         "pmcid": doi_to_pmcid(doi),
     }
-
-
-@mcp.tool()
-def screen_by_doi(
-    doi: str,
-    criterion: str,
-    unpaywall_email: str = "",
-) -> dict:
-    """Fetch a paper by DOI and screen it for relevance in one step.
-
-    Handles papers that have no PMID (e.g. bioRxiv/medRxiv preprints).
-    Tries sources in order: preprint JATS XML → Europe PMC →
-    Unpaywall PDF → Semantic Scholar PDF → preprint abstract API fallback.
-
-    Args:
-        doi: DOI string, e.g. "10.64898/2026.02.16.706214".
-        criterion: A yes/no relevance question.
-        unpaywall_email: Email for the Unpaywall API (optional).
-
-    Returns:
-        {"relevant": true | false, "reason": "one sentence",
-         "text_source": "preprint_fulltext" | "europepmc_fulltext" |
-                         "unpaywall_pdf" | "s2_pdf" | "preprint_abstract",
-         "doi": "..."}
-    """
-    email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
-    return _screen_by_doi(_llm, doi, criterion, unpaywall_email=email)
 
 
 @mcp.tool()
@@ -287,19 +210,24 @@ def lookup_s2_pdf(doi: str) -> dict:
 
 @mcp.tool()
 def run_pipeline(
-    pmids: str,
+    ids: str,
     criterion: str,
     fields: str,
     output_path: str = "results.csv",
     unpaywall_email: str = "",
 ) -> dict:
-    """Run the full screen + extract pipeline on a list of PMIDs and write a CSV.
+    """Run the full screen + extract pipeline on a mixed list of identifiers and write a CSV.
 
-    This is equivalent to running `biolit --pmids ... --criterion ... --fields ...`
-    from the command line. Full-text retrieval is always attempted.
+    Accepts PMIDs, DOIs, and GEO accessions in any combination. Each identifier
+    is auto-detected and routed to the appropriate fetcher. Full-text retrieval
+    is attempted for PubMed and DOI records; GEO records use their metadata text.
+
+    This is equivalent to running `biolit --ids ... --criterion ... --fields ...`
+    from the command line.
 
     Args:
-        pmids: Comma-separated PubMed IDs.
+        ids: Comma-separated identifiers — PMIDs, DOIs, GEO accessions, or any mix.
+            Example: "41795042,GSE53987,10.1101/2025.03.17.25324098"
         criterion: Relevance screening question.
         fields: Comma-separated field names to extract, e.g.
             "methodology, sample_type, causal_claims, summary"
@@ -309,51 +237,19 @@ def run_pipeline(
             Falls back to UNPAYWALL_EMAIL env var.
 
     Returns:
-        {"output_path": "...", "relevant_count": N}
+        {"output_path": "..." | null, "relevant_count": N}
     """
-    pmid_list = [p.strip() for p in pmids.split(",") if p.strip()]
+    id_list = [x.strip() for x in ids.split(",") if x.strip()]
     email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
-    _run(
+    csv_path, relevant_count = _run(
         client=_llm,
-        pmids=pmid_list,
+        ids=id_list,
         criterion=criterion,
         fields_description=fields,
         output_path=output_path,
         unpaywall_email=email,
     )
-    return {"output_path": output_path, "pmid_count": len(pmid_list)}
-
-
-@mcp.tool()
-def run_geo_pipeline(
-    accessions: str,
-    criterion: str,
-    fields: str,
-    output_path: str = "results.csv",
-) -> dict:
-    """Run the full screen + extract pipeline on a list of GEO accessions and write a CSV.
-
-    This is equivalent to running `biolit --accessions ... --criterion ... --fields ...`
-    from the command line.
-
-    Args:
-        accessions: Comma-separated GEO accessions (e.g. "GSE53987,GSE12345").
-        criterion: Relevance screening question.
-        fields: Comma-separated field names to extract.
-        output_path: Path for the output CSV (default: results.csv).
-
-    Returns:
-        {"output_path": "...", "accession_count": N}
-    """
-    accession_list = [a.strip() for a in accessions.split(",") if a.strip()]
-    _run_geo(
-        client=_llm,
-        accessions=accession_list,
-        criterion=criterion,
-        fields_description=fields,
-        output_path=output_path,
-    )
-    return {"output_path": output_path, "accession_count": len(accession_list)}
+    return {"output_path": csv_path, "relevant_count": relevant_count}
 
 
 @mcp.tool()

@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 
 from biolit.fetchers.pubmed import doi_to_pmid
 from biolit.llm import get_llm_client
-from biolit.pipeline import run, run_geo, screen_by_pmid, screen_by_geo, screen_by_doi
+from biolit.pipeline import run, screen_by_pmid, screen_by_geo, screen_by_doi
 from biolit.parsers.utils import DEFAULT_MAX_CHARS
-from biolit.utils import read_eml_body, extract_pmids, read_pmids_file, read_geo_file
+from biolit.utils import read_eml_body, extract_pmids, read_pmids_file
 
 load_dotenv()
 
@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _screen_main(argv: list[str] | None = None) -> None:
-    """biolit screen — quickly screen a single PMID or GEO accession."""
+    """biolit screen — quickly screen a single paper or GEO record for relevance."""
     import json
 
     parser = argparse.ArgumentParser(
@@ -39,13 +39,14 @@ def _screen_main(argv: list[str] | None = None) -> None:
             "Examples:\n"
             "  biolit screen --pmid 41627908 --default\n"
             "  biolit screen --accession GSE53987 --default\n"
+            "  biolit screen --doi 10.1101/2025.03.17.25324098 --default\n"
             "  biolit screen --pmid 41627908 --criterion 'Is this about GWAS?'\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     id_group = parser.add_mutually_exclusive_group(required=True)
     id_group.add_argument("--pmid", help="PubMed ID to screen")
-    id_group.add_argument("--doi", help="DOI to screen (resolved to PMID via NCBI)")
+    id_group.add_argument("--doi", help="DOI to screen (resolved to PMID via NCBI if possible)")
     id_group.add_argument("--accession", help="GEO accession to screen")
     parser.add_argument("--criterion", default=None, help="Relevance question (yes/no)")
     parser.add_argument("--default", action="store_true", help="Use schizophrenia genomics criterion")
@@ -98,18 +99,18 @@ def _run_main(argv: list[str] | None = None) -> None:
         prog="biolit",
         description=(
             "LLM-assisted biomedical literature screening and extraction. "
-            "Accepts PubMed alert emails (.eml), plain PMID lists, or GEO accession lists. "
-            "Screens each record for relevance, then extracts structured fields into a CSV."
+            "Accepts a PubMed alert email (.eml), a plain-text file of identifiers, "
+            "or inline identifiers via --ids. Identifiers can be PMIDs, DOIs, or GEO "
+            "accessions — mixed lists are supported. Screens each record for relevance, "
+            "then extracts structured fields into a CSV."
         ),
         epilog=(
             "Examples:\n"
             "  biolit alert.eml --default\n"
-            "  biolit pmids.txt --default\n"
-            "  biolit --pmids 41795042,41792186 --default\n"
-            "  biolit geo_accessions.txt --default\n"
-            "  biolit --accessions GSE53987 --default\n"
+            "  biolit identifiers.txt --default\n"
+            "  biolit --ids 41795042,GSE53987,10.1101/2025.03.17.25324098 --default\n"
             "  biolit alert.eml --default --unpaywall-email you@example.com\n"
-            "  biolit pmids.txt --criterion 'Is this about treatment-resistant schizophrenia?' "
+            "  biolit identifiers.txt --criterion 'Is this about treatment-resistant schizophrenia?' "
             "--fields 'methodology, sample_size, outcomes'\n"
             "\n"
             "Environment variables:\n"
@@ -124,19 +125,17 @@ def _run_main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "input_file", nargs="?", default=None,
-        help="PubMed alert .eml file, plain-text file of PMIDs, or plain-text file of GEO accessions",
+        help=(
+            "PubMed alert .eml file, or a plain-text file of identifiers "
+            "(PMIDs, DOIs, GEO accessions — one per line, mixed types accepted)"
+        ),
     )
     parser.add_argument(
-        "--pmids", default=None,
-        help="Comma-separated PMIDs (alternative to input_file)",
-    )
-    parser.add_argument(
-        "--dois", default=None,
-        help="Comma-separated DOIs (alternative to input_file; resolved to PMIDs via NCBI)",
-    )
-    parser.add_argument(
-        "--accessions", default=None,
-        help="Comma-separated GEO accessions (alternative to input_file)",
+        "--ids", default=None,
+        help=(
+            "Comma-separated identifiers: PMIDs, DOIs, GEO accessions, or any mix. "
+            "Example: --ids 41795042,GSE53987,10.1101/2025.03.17.25324098"
+        ),
     )
 
     # Screening / extraction
@@ -168,7 +167,7 @@ def _run_main(argv: list[str] | None = None) -> None:
         help="Ollama server URL (default: http://localhost:11434)",
     )
 
-    # Full-text (always on)
+    # Full-text options
     parser.add_argument(
         "--unpaywall-email", default=os.environ.get("UNPAYWALL_EMAIL"),
         help="Email for Unpaywall API (or set UNPAYWALL_EMAIL env var)",
@@ -215,100 +214,48 @@ def _run_main(argv: list[str] | None = None) -> None:
 
     print(f"Using LLM: {client}\n")
 
-    # Resolve input — CLI flags take priority over file
-    if not args.input_file and not args.pmids and not args.dois and not args.accessions:
-        print("Error: provide an input_file, --pmids, --dois, or --accessions.")
+    if not args.input_file and not args.ids:
+        print("Error: provide an input_file or --ids.")
         sys.exit(1)
 
-    if args.accessions:
-        input_type = "geo"
-        accessions = [a.strip() for a in args.accessions.split(",") if a.strip()]
-        print(f"Using {len(accessions)} GEO accessions from --accessions\n")
-    elif args.pmids:
-        input_type = "pubmed"
-        pmids = [p.strip() for p in args.pmids.split(",") if p.strip()]
-        print(f"Using {len(pmids)} PMIDs from --pmids\n")
-    elif args.dois:
-        input_type = "pubmed"
-        dois = [d.strip() for d in args.dois.split(",") if d.strip()]
-        pmids = _resolve_dois(dois)
-    elif args.input_file.endswith(".eml"):
-        input_type = "pubmed"
+    # Build the identifier list from whichever input was given.
+    if args.ids:
+        ids = [x.strip() for x in args.ids.split(",") if x.strip()]
+        print(f"Using {len(ids)} identifiers from --ids\n")
+    elif args.input_file and args.input_file.endswith(".eml"):
         body = read_eml_body(args.input_file)
-        pmids = extract_pmids(body)
-        print(f"Found {len(pmids)} PMIDs in {args.input_file}\n")
+        ids = extract_pmids(body)
+        print(f"Found {len(ids)} PMIDs in {args.input_file}\n")
     else:
-        first_value = _peek_first_value(args.input_file)
-        if first_value and first_value.upper().startswith(("GSE", "GDS", "GSM", "GPL")):
-            input_type = "geo"
-            accessions = read_geo_file(args.input_file)
-            print(f"Read {len(accessions)} GEO accessions from {args.input_file}\n")
-        elif first_value and first_value.startswith("10."):
-            input_type = "pubmed"
-            dois = [l.strip() for l in open(args.input_file) if l.strip() and not l.startswith("#")]
-            pmids = _resolve_dois(dois)
-        else:
-            input_type = "pubmed"
-            pmids = read_pmids_file(args.input_file)
-            print(f"Read {len(pmids)} PMIDs from {args.input_file}\n")
+        ids = _read_ids_file(args.input_file)
+        print(f"Read {len(ids)} identifiers from {args.input_file}\n")
 
-    if input_type == "geo":
-        if not accessions:
-            print("No accessions found. Exiting.")
-            sys.exit(1)
-        run_geo(
-            client=client,
-            accessions=accessions,
-            criterion=criterion,
-            fields_description=fields,
-            output_path=args.output,
-            max_chars=args.max_chars,
-        )
-    else:
-        if not pmids:
-            print("No PMIDs found. Exiting.")
-            sys.exit(1)
-        sections_wanted = (
-            [s.strip() for s in args.sections.split(",") if s.strip()]
-            if args.sections
-            else None
-        )
-        run(
-            client=client,
-            pmids=pmids,
-            criterion=criterion,
-            fields_description=fields,
-            output_path=args.output,
-            unpaywall_email=args.unpaywall_email,
-            sections_wanted=sections_wanted,
-            max_chars=args.max_chars,
-        )
+    if not ids:
+        print("No identifiers found. Exiting.")
+        sys.exit(1)
+
+    sections_wanted = (
+        [s.strip() for s in args.sections.split(",") if s.strip()]
+        if args.sections
+        else None
+    )
+    run(
+        client=client,
+        ids=ids,
+        criterion=criterion,
+        fields_description=fields,
+        output_path=args.output,
+        unpaywall_email=args.unpaywall_email,
+        sections_wanted=sections_wanted,
+        max_chars=args.max_chars,
+    )
 
 
-def _resolve_dois(dois: list[str]) -> list[str]:
-    """Convert a list of DOIs to PMIDs, skipping any that can't be resolved."""
-    pmids = []
-    for doi in dois:
-        pmid = doi_to_pmid(doi)
-        if pmid:
-            print(f"  {doi} → PMID {pmid}")
-            pmids.append(pmid)
-        else:
-            print(f"  {doi} → could not resolve (skipped)")
-    print(f"Resolved {len(pmids)}/{len(dois)} DOIs to PMIDs\n")
-    return pmids
-
-
-def _peek_first_value(path: str) -> str | None:
-    """Return the first non-blank, non-comment line of a file."""
+def _read_ids_file(path: str) -> list[str]:
+    """Read a plain-text file of identifiers (one per line, comments ignored)."""
     with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                return line
-    return None
+        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 
 if __name__ == "__main__":
     main()
-
