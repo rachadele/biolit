@@ -2,6 +2,25 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.8] — 2026-03-17
+
+### Added
+- **Unified pipeline** — `run()` now accepts a mixed list of PMIDs, DOIs, and GEO accessions via a single `ids` parameter. Each identifier is auto-detected by format and routed to the appropriate fetcher (`fetch_pubmed_metadata`, `fetch_geo_record`, or `fetch_preprint_metadata`).
+- **`fetch_record(id_str)`** in `pipeline.py` — normalises any identifier into a paper dict with `pmid`, `doi`, and `geo_accession` keys always present.
+- **`_detect_id_type(id_str)`** in `pipeline.py` — classifies an identifier as `pmid`, `doi`, or `geo`.
+- **Native preprint/medRxiv support** — DOIs that cannot be resolved to a PMID (e.g. medRxiv papers not yet in PubMed) now flow through the full pipeline: metadata from the bioRxiv/medRxiv API, full-text from the preprint chain. No records are skipped due to a missing PMID.
+- **Unified `--ids` CLI flag** — replaces `--pmids`, `--dois`, and `--accessions`; accepts any mix of identifier types.
+- **Unified `run_pipeline` MCP tool** — replaces `run_pipeline` (PMID-only) and `run_geo_pipeline`; accepts the same mixed `ids` string.
+- **`geo_accession` column in all CSVs** — present in every output row (null for non-GEO records), alongside `pmid` and `doi`.
+- **`linked_pmids` column** — GEO records include all associated PubMed IDs in a separate column.
+- **`resolve_fulltext()` handles pmid=None** — PMC step is skipped when no PMID is available; Europe PMC and preprint steps proceed via DOI.
+- **`tests/test_integration.py`** — real network + LLM test for the medRxiv DOI `10.1101/2025.03.17.25324098`; auto-skipped when `ANTHROPIC_API_KEY` is unset.
+
+### Removed
+- **`run_geo()`** — superseded by the unified `run()`.
+- **`--pmids`, `--dois`, `--accessions` CLI flags** — replaced by `--ids`.
+- **`run_geo_pipeline` MCP tool** — replaced by the unified `run_pipeline`.
+
 ## [0.1.7] — 2026-03-17
 
 ### Changed

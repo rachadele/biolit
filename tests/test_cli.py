@@ -3,23 +3,11 @@ import pathlib
 import pytest
 from unittest.mock import patch, MagicMock
 
-from biolit.cli import _peek_first_value, _resolve_dois, _screen_main, _run_main
+from biolit.cli import _screen_main, _run_main
 from biolit.utils import read_geo_file, read_pmids_file
 
 REAL_PMIDS = ["41795042", "41792186", "41785323"]
 REAL_ACCESSIONS = ["GSE53987", "GSE12345"]
-
-
-class TestPeekFirstValue:
-    def test_returns_first_non_blank_non_comment_line(self, tmp_path):
-        f = tmp_path / "input.txt"
-        f.write_text("# comment\n\nGSE53987\nGSE12345\n")
-        assert _peek_first_value(str(f)) == "GSE53987"
-
-    def test_returns_none_for_empty_file(self, tmp_path):
-        f = tmp_path / "empty.txt"
-        f.write_text("")
-        assert _peek_first_value(str(f)) is None
 
 
 class TestReadGeoFile:
@@ -45,25 +33,6 @@ class TestReadPmidsFile:
         f.write_text("")
         assert read_pmids_file(str(f)) == []
 
-
-class TestResolveDois:
-    @patch("biolit.cli.doi_to_pmid")
-    def test_resolves_dois_to_pmids(self, mock_resolve):
-        mock_resolve.side_effect = ["11111111", "22222222"]
-        result = _resolve_dois(["10.1038/a", "10.1038/b"])
-        assert result == ["11111111", "22222222"]
-
-    @patch("biolit.cli.doi_to_pmid")
-    def test_skips_unresolvable_dois(self, mock_resolve):
-        mock_resolve.side_effect = ["11111111", None]
-        result = _resolve_dois(["10.1038/a", "10.9999/bad"])
-        assert result == ["11111111"]
-
-    @patch("biolit.cli.doi_to_pmid")
-    def test_returns_empty_list_when_none_resolve(self, mock_resolve):
-        mock_resolve.return_value = None
-        result = _resolve_dois(["10.9999/bad"])
-        assert result == []
 
 
 class TestFulltextFlagRemoved:

@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 from biolit.fetchers.geo import fetch_geo_record
-from biolit.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext
+from biolit.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext, doi_to_pmid
 from biolit.fetchers.europepmc import fetch_europepmc_fulltext
 from biolit.fetchers.preprints import fetch_preprint, fetch_preprint_metadata
 from biolit.fetchers.unpaywall import fetch_via_unpaywall
@@ -75,11 +75,73 @@ def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text
     )
     result = parse_json_response(response)
     result["title"] = paper["title"]
-    result["url"] = paper["url"]
-    result["pmid"] = paper["pmid"]
+    result["url"] = paper.get("url")
+    result["pmid"] = paper.get("pmid")
     result["doi"] = paper.get("doi")
+    result["geo_accession"] = paper.get("geo_accession")
     result["text_source"] = paper.get("text_source", "abstract")
     return result
+
+
+# ---------------------------------------------------------------------------
+# Input type detection and unified record fetching
+# ---------------------------------------------------------------------------
+
+def _detect_id_type(id_str: str) -> str:
+    """Return 'geo', 'doi', or 'pmid' based on the identifier string."""
+    s = id_str.strip()
+    if s.upper().startswith(("GSE", "GDS", "GSM", "GPL")):
+        return "geo"
+    if s.startswith("10.") or (s.startswith("10") and "/" in s):
+        return "doi"
+    return "pmid"
+
+
+def fetch_record(id_str: str) -> dict | None:
+    """Fetch a normalized record dict for a PMID, DOI, or GEO accession.
+
+    All returned dicts include 'pmid', 'doi', and 'geo_accession' keys
+    (None when not applicable) so they can flow through the same
+    screen / extract / CSV pipeline.
+    """
+    id_str = id_str.strip()
+    id_type = _detect_id_type(id_str)
+
+    if id_type == "geo":
+        record = fetch_geo_record(id_str)
+        if record is None:
+            return None
+        record["geo_accession"] = id_str
+        record.setdefault("pmid", None)
+        record.setdefault("doi", None)
+        return record
+
+    if id_type == "doi":
+        # Try to resolve to a PMID for full PubMed metadata + full-text chain.
+        pmid = doi_to_pmid(id_str)
+        if pmid:
+            paper = fetch_pubmed_metadata(pmid)
+            if paper:
+                paper["geo_accession"] = None
+                return paper
+        # Preprint or unresolvable DOI — use preprint API for title/abstract.
+        meta = fetch_preprint_metadata(id_str)
+        return {
+            "title": meta.get("title", id_str) if meta else id_str,
+            "abstract": meta.get("abstract", "") if meta else "",
+            "doi": id_str,
+            "pmid": None,
+            "geo_accession": None,
+            "url": f"https://doi.org/{id_str}",
+            "mesh_terms": [],
+        }
+
+    # PMID
+    paper = fetch_pubmed_metadata(id_str)
+    if paper is None:
+        return None
+    paper["geo_accession"] = None
+    return paper
 
 
 # ---------------------------------------------------------------------------
@@ -92,10 +154,10 @@ def resolve_fulltext(
     sections_wanted: list[str] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> tuple[str, str, dict]:
-    """Attempt to fetch full text for *paper*, returning (text, source_label).
+    """Attempt to fetch full text for *paper*, returning (text, source_label, artifacts).
 
     Fallback chain:
-      1. PMC JATS XML (via NCBI efetch)
+      1. PMC JATS XML (via NCBI efetch) — skipped when pmid is None
       2. Europe PMC JATS XML (broader open-access coverage)
       3. Preprint JATS XML (bioRxiv / medRxiv)
       4. Unpaywall PDF
@@ -103,19 +165,19 @@ def resolve_fulltext(
       6. Abstract only
 
     *sections_wanted* filters which sections are concatenated (None = all).
-    Returns a (text, source) tuple.
     """
     artifacts: dict = {}
-    pmid = paper["pmid"]
+    pmid = paper.get("pmid")
     doi = paper.get("doi")
 
-    # 1. PMC (NCBI efetch)
-    xml_bytes = fetch_pmc_fulltext(pmid)
-    if xml_bytes:
-        artifacts["pmc_xml"] = xml_bytes
-        secs = parse_jats_sections(xml_bytes)
-        if secs:
-            return select_sections(secs, sections_wanted, max_chars), "pmc_fulltext", artifacts
+    # 1. PMC (NCBI efetch) — requires a PMID
+    if pmid:
+        xml_bytes = fetch_pmc_fulltext(pmid)
+        if xml_bytes:
+            artifacts["pmc_xml"] = xml_bytes
+            secs = parse_jats_sections(xml_bytes)
+            if secs:
+                return select_sections(secs, sections_wanted, max_chars), "pmc_fulltext", artifacts
 
     # 2. Europe PMC MED/{pmid} — broader open-access coverage beyond NCBI PMC
     xml_bytes = fetch_europepmc_fulltext(pmid=pmid, doi=doi)
@@ -134,7 +196,7 @@ def resolve_fulltext(
             if secs:
                 return select_sections(secs, sections_wanted, max_chars), "preprint_fulltext", artifacts
 
-    # 3. Unpaywall PDF
+    # 4. Unpaywall PDF
     if doi and unpaywall_email:
         pdf_bytes = fetch_via_unpaywall(doi, unpaywall_email)
         if pdf_bytes:
@@ -146,7 +208,7 @@ def resolve_fulltext(
             except ImportError:
                 print("  [warning] pdfminer.six not installed; skipping PDF parsing")
 
-    # 5. Semantic Scholar open-access PDF (good coverage of preprints and OA journals)
+    # 5. Semantic Scholar open-access PDF
     if doi:
         pdf_bytes = fetch_s2_pdf(doi)
         if pdf_bytes:
@@ -159,6 +221,8 @@ def resolve_fulltext(
                 print("  [warning] pdfminer.six not installed; skipping PDF parsing")
 
     # 6. Abstract fallback
+    # For DOI-only preprints, fetch_record() already populated paper["abstract"]
+    # from the preprint API, so this covers both PubMed and preprint cases.
     return paper.get("abstract", ""), "abstract", artifacts
 
 
@@ -172,10 +236,7 @@ def screen_by_pmid(
     criterion: str,
     unpaywall_email: str | None = None,
 ) -> dict:
-    """Fetch a PubMed paper and screen it for relevance in one call.
-
-    Returns the screening result dict plus a ``text_source`` key.
-    """
+    """Fetch a PubMed paper and screen it for relevance in one call."""
     paper = fetch_pubmed_metadata(pmid)
     if paper is None:
         return {"error": f"No record found for PMID {pmid}"}
@@ -195,8 +256,6 @@ def screen_by_doi(
     """Fetch a paper by DOI and screen it for relevance.
 
     Used when a DOI cannot be resolved to a PMID (e.g. preprints).
-    Tries preprint XML → Europe PMC XML → Unpaywall PDF, then falls back
-    to an empty-text screen if nothing is retrievable.
     """
     text = ""
     source = "unavailable"
@@ -238,7 +297,6 @@ def screen_by_doi(
             except ImportError:
                 pass
 
-    # Last resort: abstract from the biorxiv/medrxiv API (full text blocked by Cloudflare)
     title = doi
     if not text:
         meta = fetch_preprint_metadata(doi)
@@ -262,10 +320,7 @@ def screen_by_geo(
     accession: str,
     criterion: str,
 ) -> dict:
-    """Fetch a GEO record and screen it for relevance in one call.
-
-    Returns the screening result dict plus a ``text_source`` key.
-    """
+    """Fetch a GEO record and screen it for relevance in one call."""
     record = fetch_geo_record(accession)
     if record is None:
         return {"error": f"No record found for accession {accession}"}
@@ -278,12 +333,12 @@ def screen_by_geo(
 
 
 # ---------------------------------------------------------------------------
-# Main pipeline
+# Main unified pipeline
 # ---------------------------------------------------------------------------
 
 def run(
     client: BaseLLMClient,
-    pmids: list[str],
+    ids: list[str],
     criterion: str,
     fields_description: str,
     output_path: str,
@@ -291,25 +346,30 @@ def run(
     sections_wanted: list[str] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> None:
-    # Step 1: translate field names into a schema
+    """Screen and extract a mixed list of PMIDs, DOIs, and GEO accessions.
+
+    Each identifier is auto-detected and routed to the appropriate fetcher.
+    All record types flow through the same screen → extract → artifacts → CSV loop.
+    The output CSV always includes pmid, doi, and geo_accession columns.
+    """
     print("Building output schema...")
     output_schema = build_output_schema(client, fields_description)
     print(f"  Fields: {', '.join(output_schema.keys())}\n")
 
-    print(f"Processing {len(pmids)} PMIDs\n")
+    print(f"Processing {len(ids)} identifiers\n")
 
     run_dir, csv_path = _make_run_dir(output_path)
     artifacts_root = os.path.join(run_dir, "artifacts")
     os.makedirs(artifacts_root, exist_ok=True)
     print(f"Run directory: {run_dir}\n")
 
-    # Step 3: fetch → (optionally) full text → screen → extract
     results = []
-    for i, pmid in enumerate(pmids, 1):
-        print(f"[{i}/{len(pmids)}] PMID {pmid}", end=" ... ", flush=True)
+    for i, id_str in enumerate(ids, 1):
+        id_type = _detect_id_type(id_str)
+        print(f"[{i}/{len(ids)}] {id_str}", end=" ... ", flush=True)
 
         try:
-            paper = fetch_pubmed_metadata(pmid)
+            paper = fetch_record(id_str)
         except Exception as e:
             print(f"fetch error: {e}")
             continue
@@ -318,14 +378,23 @@ def run(
             print("skipped (not found)")
             continue
 
-        print("resolving full text...", end=" ", flush=True)
-        text, source, fulltext_artifacts = resolve_fulltext(
-            paper, unpaywall_email, sections_wanted, max_chars
-        )
+        # GEO records use their metadata text directly; all others attempt full-text.
+        if id_type == "geo":
+            text = paper.get("abstract", "")
+            if len(text) > max_chars:
+                text = text[:max_chars]
+            source = paper.get("text_source", "geo_metadata")
+            fulltext_artifacts = {}
+        else:
+            print("resolving full text...", end=" ", flush=True)
+            text, source, fulltext_artifacts = resolve_fulltext(
+                paper, unpaywall_email, sections_wanted, max_chars
+            )
         paper["text_source"] = source
 
-        # Persist what we retrieved/sent so the run is reproducible and inspectable.
-        paper_slug = f"{pmid}_{_safe_name(paper.get('title', 'paper'))}"
+        # Persist artifacts so the run is reproducible and inspectable.
+        slug_id = paper.get("geo_accession") or paper.get("pmid") or id_str
+        paper_slug = f"{slug_id}_{_safe_name(paper.get('title', 'paper'))}"
         paper_dir = os.path.join(artifacts_root, paper_slug)
         os.makedirs(paper_dir, exist_ok=True)
         _write_text(os.path.join(paper_dir, "selected_text.txt"), text)
@@ -335,10 +404,11 @@ def run(
                 {
                     "pmid": paper.get("pmid"),
                     "doi": paper.get("doi"),
+                    "geo_accession": paper.get("geo_accession"),
                     "title": paper.get("title"),
                     "url": paper.get("url"),
                     "mesh_terms": paper.get("mesh_terms", []),
-                    "text_source": paper.get("text_source"),
+                    "text_source": source,
                 },
                 indent=2,
             ),
@@ -363,125 +433,21 @@ def run(
             print(f"not relevant ({screening.get('reason', '')})")
             continue
 
-        source_label = paper.get("text_source", "abstract")
-        print(f"relevant [{source_label}] — extracting fields")
+        print(f"relevant [{source}] — extracting fields")
 
         try:
             result = extract_fields(client, paper, output_schema, text)
+            # For GEO records without a DOI, fall back to a linked PMID for citation lookup.
+            lookup_pmid = paper.get("pmid")
+            if not lookup_pmid and id_type == "geo":
+                linked = paper.get("pmids", [])
+                lookup_pmid = linked[0] if linked else None
             result["citation_count"] = get_citation_count(
-                doi=paper.get("doi"), pmid=paper.get("pmid")
+                doi=paper.get("doi"), pmid=lookup_pmid
             )
-            results.append(result)
-        except Exception as e:
-            print(f"  extraction error: {e}")
-
-    # Step 4: write CSV
-    if not results:
-        print("\nNo relevant papers found.")
-        return
-
-    priority = ["title", "url", "pmid", "doi", "text_source", "citation_count"]
-    all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
-    fieldnames = priority + [k for k in all_keys if k not in priority]
-
-    # Keep compatibility: --output now determines parent folder + CSV filename.
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(results)
-
-    print(f"\nWrote {len(results)} relevant papers to {csv_path}")
-
-
-def run_geo(
-    client: BaseLLMClient,
-    accessions: list[str],
-    criterion: str,
-    fields_description: str,
-    output_path: str,
-    max_chars: int = DEFAULT_MAX_CHARS,
-) -> None:
-    """Run the screening + extraction pipeline on a list of GEO accessions.
-
-    Each GEO record's summary and overall-design text is used in place of an
-    abstract. Full-text fetching is not applicable — the record text IS the
-    content. The output CSV has the same structure as the PubMed pipeline.
-    """
-    # Step 1: translate field names into a schema
-    print("Building output schema...")
-    output_schema = build_output_schema(client, fields_description)
-    print(f"  Fields: {', '.join(output_schema.keys())}\n")
-
-    print(f"Processing {len(accessions)} GEO accessions\n")
-
-    run_dir, csv_path = _make_run_dir(output_path)
-    artifacts_root = os.path.join(run_dir, "artifacts")
-    os.makedirs(artifacts_root, exist_ok=True)
-    print(f"Run directory: {run_dir}\n")
-
-    results = []
-    for i, accession in enumerate(accessions, 1):
-        print(f"[{i}/{len(accessions)}] {accession}", end=" ... ", flush=True)
-
-        try:
-            paper = fetch_geo_record(accession)
-        except Exception as e:
-            print(f"fetch error: {e}")
-            continue
-
-        if not paper:
-            print("skipped (not found)")
-            continue
-
-        text = paper.get("abstract", "")
-        if len(text) > max_chars:
-            text = text[:max_chars]
-
-        paper_slug = f"{accession}_{_safe_name(paper.get('title', 'record'))}"
-        paper_dir = os.path.join(artifacts_root, paper_slug)
-        os.makedirs(paper_dir, exist_ok=True)
-        _write_text(os.path.join(paper_dir, "selected_text.txt"), text)
-        _write_text(
-            os.path.join(paper_dir, "metadata.json"),
-            json.dumps(
-                {
-                    "accession": accession,
-                    "title": paper.get("title"),
-                    "url": paper.get("url"),
-                    "pmids": paper.get("pmids", []),
-                    "text_source": paper.get("text_source"),
-                },
-                indent=2,
-            ),
-        )
-
-        if not text:
-            print("skipped (no content)")
-            continue
-
-        try:
-            screening = screen_paper(client, paper, criterion, text)
-        except Exception as e:
-            print(f"screening error: {e}")
-            continue
-
-        if not screening.get("relevant"):
-            print(f"not relevant ({screening.get('reason', '')})")
-            continue
-
-        print("relevant — extracting fields")
-
-        try:
-            result = extract_fields(client, paper, output_schema, text)
-            result.pop("pmid", None)  # accession is the identifier for GEO records
-            result["geo_accession"] = accession
-            linked_pmids = paper.get("pmids", [])
-            result["pmids"] = ", ".join(linked_pmids)
-            # Use the first linked PMID for citation lookup (GEO records rarely have a DOI)
-            first_pmid = linked_pmids[0] if linked_pmids else None
-            result["citation_count"] = get_citation_count(
-                doi=paper.get("doi"), pmid=first_pmid
-            )
+            # Include all linked PMIDs for GEO records as an extra column.
+            if id_type == "geo":
+                result["linked_pmids"] = ", ".join(paper.get("pmids", []))
             results.append(result)
         except Exception as e:
             print(f"  extraction error: {e}")
@@ -490,7 +456,7 @@ def run_geo(
         print("\nNo relevant records found.")
         return
 
-    priority = ["title", "url", "geo_accession", "pmids", "doi", "text_source", "citation_count"]
+    priority = ["title", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"]
     all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
     fieldnames = priority + [k for k in all_keys if k not in priority]
 
@@ -510,7 +476,6 @@ def _make_run_dir(base_output_path: str) -> tuple[str, str]:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_dir = os.path.dirname(base_output_path) or "."
     csv_name = os.path.basename(base_output_path) or "results.csv"
-    # Ensure parent exists, then create a timestamped run folder.
     os.makedirs(base_dir, exist_ok=True)
     run_dir = os.path.join(base_dir, f"run_{ts}")
     os.makedirs(run_dir, exist_ok=True)
@@ -526,4 +491,3 @@ def _write_bytes(path: str, data: bytes | None) -> None:
     if data:
         with open(path, "wb") as f:
             f.write(data)
-
