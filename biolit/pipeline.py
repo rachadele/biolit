@@ -334,6 +334,52 @@ def screen_by_geo(
 
 
 # ---------------------------------------------------------------------------
+# GEO full-text helper
+# ---------------------------------------------------------------------------
+
+def _resolve_geo_fulltext(
+    paper: dict,
+    unpaywall_email: str | None = None,
+    sections_wanted: list[str] | None = None,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> tuple[str, str, dict]:
+    """Attempt to fetch full text via linked PMIDs for a GEO record.
+
+    Tries each linked PMID in order. Returns the first real full text found.
+    Falls back to the first linked abstract, then to GEO metadata.
+
+    Returns (text, source_label, artifacts).
+    """
+    first_linked_abstract: str | None = None
+    first_linked_artifacts: dict = {}
+
+    for pmid in paper.get("pmids", []):
+        try:
+            linked_paper = fetch_pubmed_metadata(pmid)
+        except Exception:
+            continue
+        if linked_paper is None:
+            continue
+
+        text, source, artifacts = resolve_fulltext(
+            linked_paper, unpaywall_email, sections_wanted, max_chars
+        )
+        if source != "abstract":
+            return text, "geo_linked_fulltext", artifacts
+        if first_linked_abstract is None and text:
+            first_linked_abstract = text
+            first_linked_artifacts = artifacts
+
+    if first_linked_abstract:
+        return first_linked_abstract, "geo_linked_abstract", first_linked_artifacts
+
+    geo_text = paper.get("abstract", "")
+    if len(geo_text) > max_chars:
+        geo_text = geo_text[:max_chars]
+    return geo_text, "geo_record", {}
+
+
+# ---------------------------------------------------------------------------
 # Main unified pipeline
 # ---------------------------------------------------------------------------
 
@@ -379,15 +425,12 @@ def run(
             print("skipped (not found)", file=sys.stderr)
             continue
 
-        # GEO records use their metadata text directly; all others attempt full-text.
+        print("resolving full text...", end=" ", flush=True, file=sys.stderr)
         if id_type == "geo":
-            text = paper.get("abstract", "")
-            if len(text) > max_chars:
-                text = text[:max_chars]
-            source = paper.get("text_source", "geo_metadata")
-            fulltext_artifacts = {}
+            text, source, fulltext_artifacts = _resolve_geo_fulltext(
+                paper, unpaywall_email, sections_wanted, max_chars
+            )
         else:
-            print("resolving full text...", end=" ", flush=True, file=sys.stderr)
             text, source, fulltext_artifacts = resolve_fulltext(
                 paper, unpaywall_email, sections_wanted, max_chars
             )

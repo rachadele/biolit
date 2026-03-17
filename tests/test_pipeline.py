@@ -15,6 +15,7 @@ from biolit.pipeline import (
     screen_by_doi,
     screen_by_pmid,
     resolve_fulltext,
+    _resolve_geo_fulltext,
 )
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
@@ -331,8 +332,9 @@ class TestPipelineRunGeo:
         return FakeLLMClient(responses)
 
     @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.fetch_pubmed_metadata", return_value=None)
     @patch("biolit.pipeline.fetch_record")
-    def test_relevant_geo_record_writes_csv(self, mock_fetch, mock_citations, tmp_path):
+    def test_relevant_geo_record_writes_csv(self, mock_fetch, mock_fetch_pm, mock_citations, tmp_path):
         mock_fetch.return_value = FAKE_GEO_RECORD
         mock_citations.return_value = None
         client = self._make_client(relevant=True)
@@ -622,3 +624,107 @@ class TestScreenByPmid:
         client = self._make_client()
         result = screen_by_pmid(client, "41795042", "Is this relevant?")
         assert result["text_source"] == "pmc_fulltext"
+
+
+# ---------------------------------------------------------------------------
+# _resolve_geo_fulltext
+# ---------------------------------------------------------------------------
+
+FAKE_LINKED_PAPER = {
+    "pmid": "31123247",
+    "doi": "10.1093/nar/gky1106",
+    "title": "Linked paper on schizophrenia expression",
+    "abstract": "Abstract of the linked paper.",
+    "mesh_terms": ["Schizophrenia"],
+    "url": "https://pubmed.ncbi.nlm.nih.gov/31123247/",
+}
+
+GEO_PAPER_WITH_PMIDS = {
+    "pmid": "31123247",
+    "accession": "GSE53987",
+    "geo_accession": "GSE53987",
+    "doi": None,
+    "title": "Microarray profiling of PFC",
+    "abstract": "GEO metadata summary text.",
+    "mesh_terms": [],
+    "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE53987",
+    "pmids": ["31123247", "99999999"],
+    "text_source": "geo_record",
+}
+
+GEO_PAPER_NO_PMIDS = {**GEO_PAPER_WITH_PMIDS, "pmids": []}
+
+
+class TestResolveGeoFulltext:
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_returns_linked_fulltext_when_available(self, mock_fetch_pm, mock_resolve):
+        mock_fetch_pm.return_value = FAKE_LINKED_PAPER
+        mock_resolve.return_value = ("full text content", "pmc_fulltext", {"pmc_xml": b"<xml/>"})
+
+        text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
+
+        assert text == "full text content"
+        assert source == "geo_linked_fulltext"
+        assert artifacts == {"pmc_xml": b"<xml/>"}
+
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_returns_linked_abstract_when_no_fulltext(self, mock_fetch_pm, mock_resolve):
+        mock_fetch_pm.return_value = FAKE_LINKED_PAPER
+        mock_resolve.return_value = ("Abstract of the linked paper.", "abstract", {})
+
+        text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
+
+        assert text == "Abstract of the linked paper."
+        assert source == "geo_linked_abstract"
+        assert artifacts == {}
+
+    def test_falls_back_to_geo_record_when_no_pmids(self):
+        text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_NO_PMIDS)
+
+        assert text == "GEO metadata summary text."
+        assert source == "geo_record"
+        assert artifacts == {}
+
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_falls_back_to_geo_record_when_all_pmids_fail(self, mock_fetch_pm):
+        mock_fetch_pm.side_effect = RuntimeError("network error")
+
+        text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
+
+        assert text == "GEO metadata summary text."
+        assert source == "geo_record"
+        assert artifacts == {}
+
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_falls_back_to_geo_record_when_metadata_returns_none(self, mock_fetch_pm):
+        mock_fetch_pm.return_value = None
+
+        text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
+
+        assert text == "GEO metadata summary text."
+        assert source == "geo_record"
+        assert artifacts == {}
+
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_stops_at_first_pmid_with_fulltext(self, mock_fetch_pm, mock_resolve):
+        mock_fetch_pm.return_value = FAKE_LINKED_PAPER
+        mock_resolve.return_value = ("full text", "pmc_fulltext", {})
+
+        _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
+
+        # GEO_PAPER_WITH_PMIDS has two PMIDs; full text found on first — should not fetch second
+        mock_fetch_pm.assert_called_once_with("31123247")
+
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_geo_record_text_truncated_to_max_chars(self, mock_fetch_pm, mock_resolve):
+        mock_fetch_pm.return_value = None
+        paper = {**GEO_PAPER_NO_PMIDS, "abstract": "x" * 200}
+
+        text, source, _ = _resolve_geo_fulltext(paper, max_chars=50)
+
+        assert len(text) == 50
+        assert source == "geo_record"

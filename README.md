@@ -90,9 +90,9 @@ biolit --ids 41795042,GSE53987,10.1101/2025.03.17.25324098 --default
 
 GEO records additionally include a `linked_pmids` column. All record types share `pmid`, `doi`, and `geo_accession` columns (null when not applicable).
 
-### Full-text retrieval (PubMed and DOI inputs)
+### Full-text retrieval
 
-Full-text retrieval runs automatically for every PMID and DOI (including preprints). GEO records use their record metadata directly. The pipeline tries each source in order, falling back to the abstract if nothing is available:
+Full-text retrieval runs automatically for every PMID and DOI (including preprints). For GEO records, the pipeline attempts full-text retrieval via each linked PMID in order, falling back to the GEO record metadata if no linked paper has accessible full text. The pipeline tries each source in order:
 
 1. PMC JATS XML (open access)
 2. Europe PMC JATS XML (broader open-access coverage)
@@ -143,7 +143,7 @@ With `--default`, the CSV columns are:
 | `pmid` | PubMed ID (null for unindexed preprints) |
 | `doi` | DOI (null for GEO records) |
 | `geo_accession` | GEO accession (null for non-GEO records) |
-| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `geo_metadata`) |
+| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `geo_linked_fulltext`, `geo_linked_abstract`, `geo_record`) |
 | `citation_count` | Citation count from Semantic Scholar (null if not found) |
 | `methodology` | General method (e.g. GWAS, scRNA-seq, proteomics) |
 | `sample_type` | Tissue/sample type and origin |
@@ -216,6 +216,7 @@ Add a `.mcp.json` in your project root:
 | `search_pubmed` | Fetch PubMed metadata by PMID |
 | `fetch_geo_record` | Fetch and parse a GEO record by accession |
 | `fetch_fulltext` | Retrieve full text for a PMID (6-step chain) |
+| `fetch_geo_fulltext` | Retrieve full text for a GEO accession via its linked PMIDs |
 | `screen_paper` | LLM relevance screen given pre-fetched text |
 | `extract_fields` | Structured field extraction given pre-fetched text |
 | `resolve_doi` | Resolve a DOI to PMID + PMCID via the NCBI ID Converter |
@@ -248,6 +249,6 @@ result = screen_paper(client, paper, "Is this about schizophrenia genomics?", pa
 ## Known Limitations
 
 - Papers without abstracts or accessible full text are skipped silently.
-- Full-text retrieval applies to PubMed and DOI inputs only; GEO records always use the record metadata directly.
+- GEO records attempt full-text retrieval via linked PMIDs. `text_source` will be `geo_linked_fulltext`, `geo_linked_abstract`, or `geo_record` depending on what was accessible.
 - bioRxiv/medRxiv JATS XML is frequently blocked by Cloudflare regardless of headers. The pipeline falls back to the title and abstract from the bioRxiv API (`text_source: preprint_abstract`).
 - The Semantic Scholar API allows roughly 100 unauthenticated requests per day. Set `SEMANTIC_SCHOLAR_API_KEY` in `.env` for higher limits.
