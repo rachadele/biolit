@@ -49,8 +49,8 @@ def _screen_main(argv: list[str] | None = None) -> None:
     id_group.add_argument("--accession", help="GEO accession to screen")
     parser.add_argument("--criterion", default=None, help="Relevance question (yes/no)")
     parser.add_argument("--default", action="store_true", help="Use schizophrenia genomics criterion")
-    parser.add_argument("--fulltext", action="store_true", help="Fetch full text before screening (PMID only)")
-    parser.add_argument("--unpaywall-email", default=os.environ.get("UNPAYWALL_EMAIL"))
+    parser.add_argument("--unpaywall-email", default=os.environ.get("UNPAYWALL_EMAIL"),
+                        help="Email for Unpaywall API (set UNPAYWALL_EMAIL env var, or pass here)")
     parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "anthropic"),
                         choices=["anthropic", "openai", "ollama"])
     parser.add_argument("--model", default=os.environ.get("LLM_MODEL"))
@@ -72,16 +72,14 @@ def _screen_main(argv: list[str] | None = None) -> None:
         if pmid:
             print(f"Resolved {args.doi} → PMID {pmid}")
             result = screen_by_pmid(client, pmid, criterion,
-                                    fulltext=args.fulltext,
-                                    unpaywall_email=args.unpaywall_email)
+                                   unpaywall_email=args.unpaywall_email)
         else:
             print(f"Could not resolve {args.doi} to a PMID — fetching directly by DOI")
             result = screen_by_doi(client, args.doi, criterion,
                                    unpaywall_email=args.unpaywall_email)
     elif args.pmid:
         result = screen_by_pmid(client, args.pmid, criterion,
-                                fulltext=args.fulltext,
-                                unpaywall_email=args.unpaywall_email)
+                               unpaywall_email=args.unpaywall_email)
     else:
         result = screen_by_geo(client, args.accession, criterion)
 
@@ -110,7 +108,7 @@ def _run_main(argv: list[str] | None = None) -> None:
             "  biolit --pmids 41795042,41792186 --default\n"
             "  biolit geo_accessions.txt --default\n"
             "  biolit --accessions GSE53987 --default\n"
-            "  biolit alert.eml --default --fulltext --unpaywall-email you@example.com\n"
+            "  biolit alert.eml --default --unpaywall-email you@example.com\n"
             "  biolit pmids.txt --criterion 'Is this about treatment-resistant schizophrenia?' "
             "--fields 'methodology, sample_size, outcomes'\n"
             "\n"
@@ -118,7 +116,7 @@ def _run_main(argv: list[str] | None = None) -> None:
             "  ANTHROPIC_API_KEY   Required for Anthropic provider (default)\n"
             "  OPENAI_API_KEY      Required for OpenAI provider\n"
             "  NCBI_API_KEY        Optional; increases NCBI rate limits\n"
-            "  UNPAYWALL_EMAIL     Required when using --fulltext\n"
+            "  UNPAYWALL_EMAIL     Email for Unpaywall API (used during full-text retrieval)\n"
             "  LLM_PROVIDER        Default provider if --provider not set\n"
             "  LLM_MODEL           Default model if --model not set\n"
         ),
@@ -170,14 +168,10 @@ def _run_main(argv: list[str] | None = None) -> None:
         help="Ollama server URL (default: http://localhost:11434)",
     )
 
-    # Full-text
-    parser.add_argument(
-        "--fulltext", action="store_true",
-        help="Attempt to fetch full text from PMC, preprint servers, and Unpaywall",
-    )
+    # Full-text (always on)
     parser.add_argument(
         "--unpaywall-email", default=os.environ.get("UNPAYWALL_EMAIL"),
-        help="Email for Unpaywall API (required when --fulltext is used; or set UNPAYWALL_EMAIL)",
+        help="Email for Unpaywall API (or set UNPAYWALL_EMAIL env var)",
     )
     parser.add_argument(
         "--sections", default=None,
@@ -285,7 +279,6 @@ def _run_main(argv: list[str] | None = None) -> None:
             criterion=criterion,
             fields_description=fields,
             output_path=args.output,
-            fulltext=args.fulltext,
             unpaywall_email=args.unpaywall_email,
             sections_wanted=sections_wanted,
             max_chars=args.max_chars,

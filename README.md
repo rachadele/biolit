@@ -72,7 +72,6 @@ biolit screen --pmid 41627908 --default
 biolit screen --accession GSE53987 --default
 biolit screen --doi 10.64898/2026.02.16.706214 --default
 biolit screen --pmid 41627908 --criterion "Is this about treatment-resistant schizophrenia?"
-biolit screen --pmid 41627908 --fulltext --default
 ```
 
 Output is a single line to stdout:
@@ -95,7 +94,7 @@ GEO results include `geo_accession` and `pmids` (linked PubMed IDs) columns in p
 
 ### Full-text retrieval (PubMed inputs only)
 
-Use `--fulltext` to screen and extract from full text instead of just the abstract. The pipeline tries each source in order:
+Full-text retrieval runs automatically for every paper. The pipeline tries each source in order, falling back to the abstract if nothing is available:
 
 1. PMC JATS XML (open access)
 2. Europe PMC JATS XML (broader open-access coverage)
@@ -104,14 +103,16 @@ Use `--fulltext` to screen and extract from full text instead of just the abstra
 5. Semantic Scholar open-access PDF
 6. Abstract fallback
 
+To enable Unpaywall (step 4), pass your email:
+
 ```bash
-biolit alert.eml --default --fulltext --unpaywall-email you@example.com
+biolit alert.eml --default --unpaywall-email you@example.com
 ```
 
 Limit which sections are sent to the LLM:
 
 ```bash
-biolit alert.eml --default --fulltext --sections methods,results
+biolit alert.eml --default --sections methods,results
 ```
 
 ### LLM providers
@@ -256,7 +257,7 @@ run(client, pmids=["41627908", "33741721"], criterion="...", fields_description=
 ## Known Limitations
 
 - Papers without abstracts or accessible full text are skipped silently.
-- Full-text retrieval (`--fulltext`) applies to PubMed and DOI inputs only; GEO records always use the record metadata directly.
+- Full-text retrieval applies to PubMed and DOI inputs only; GEO records always use the record metadata directly.
 - bioRxiv/medRxiv JATS XML is frequently blocked by Cloudflare regardless of headers. The pipeline falls back to the title and abstract from the bioRxiv API (`text_source: preprint_abstract`).
 - DOIs passed via `--dois` or a DOI file are resolved to PMIDs before the batch pipeline runs. DOIs that can't be resolved (e.g. preprints not yet indexed in PubMed) are skipped. Use `biolit screen --doi` to screen an individual unresolvable DOI.
 - The Semantic Scholar API allows roughly 100 unauthenticated requests per day. Set `SEMANTIC_SCHOLAR_API_KEY` in `.env` for higher limits.
