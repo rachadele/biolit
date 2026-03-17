@@ -90,9 +90,9 @@ biolit --ids 41795042,GSE53987,10.1101/2025.03.17.25324098 --default
 
 GEO records additionally include a `linked_pmids` column. All record types share `pmid`, `doi`, and `geo_accession` columns (null when not applicable).
 
-### Full-text retrieval (PubMed inputs only)
+### Full-text retrieval (PubMed and DOI inputs)
 
-Full-text retrieval runs automatically for every paper. The pipeline tries each source in order, falling back to the abstract if nothing is available:
+Full-text retrieval runs automatically for every PMID and DOI (including preprints). GEO records use their record metadata directly. The pipeline tries each source in order, falling back to the abstract if nothing is available:
 
 1. PMC JATS XML (open access)
 2. Europe PMC JATS XML (broader open-access coverage)
@@ -209,14 +209,6 @@ Add a `.mcp.json` in your project root:
 |---|---|
 | `run_pipeline` | Screen + extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV |
 
-**Single-record** (equivalent to `biolit screen`):
-
-| Tool | Description |
-|---|---|
-| `screen_by_pmid` | Fetch + screen a PubMed paper in one call |
-| `screen_by_doi` | Fetch + screen a paper by DOI in one call (handles preprints with no PMID) |
-| `screen_by_geo` | Fetch + screen a GEO record in one call |
-
 **Low-level** (for custom workflows):
 
 | Tool | Description |
@@ -235,22 +227,22 @@ Add a `.mcp.json` in your project root:
 The pipeline functions are importable directly:
 
 ```python
-from biolit.pipeline import screen_by_pmid, screen_by_doi, screen_by_geo, run
+from biolit.pipeline import run, screen_paper, fetch_record
 from biolit.llm import get_llm_client
 
 client = get_llm_client("anthropic")
 
-# Screen by PMID
-result = screen_by_pmid(client, "41627908", "Is this about schizophrenia genomics?")
-# {"relevant": True, "reason": "...", "text_source": "abstract"}
-
-# Screen by DOI (works for preprints without a PMID)
-result = screen_by_doi(client, "10.1101/2025.03.17.25324098", "Is this about schizophrenia genomics?")
-# {"relevant": True, "reason": "...", "text_source": "preprint_fulltext", "doi": "..."}
-
 # Batch pipeline — PMIDs, DOIs, and GEO accessions can be mixed freely
-run(client, ids=["41627908", "GSE53987", "10.1101/2025.03.17.25324098"],
+# Returns (csv_path, relevant_count)
+csv_path, count = run(client, ids=["41627908", "GSE53987", "10.1101/2025.03.17.25324098"],
     criterion="...", fields_description="methodology, summary", output_path="results.csv")
+
+# Fetch a single record (auto-detects PMID / DOI / GEO)
+paper = fetch_record("10.1101/2025.03.17.25324098")
+
+# Screen pre-fetched text
+result = screen_paper(client, paper, "Is this about schizophrenia genomics?", paper["abstract"])
+# {"relevant": True, "reason": "..."}
 ```
 
 ## Known Limitations

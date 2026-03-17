@@ -2,6 +2,18 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.10] — 2026-03-17
+
+### Changed
+- **MCP server — unified entry point**: removed `screen_by_pmid`, `screen_by_doi`, and `screen_by_geo` MCP tools. Use `run_pipeline` for all ID types (PMIDs, DOIs, GEO accessions, or any mix) — it handles auto-detection via `_detect_id_type`.
+- **`run_pipeline` return value**: now returns `{"output_path": "..." | null, "relevant_count": N}` (was `{"output_path": "...", "id_count": N}`). `output_path` is `null` when no records pass screening.
+- **`pipeline.run()` return type**: changed from `None` to `tuple[str | None, int]` — returns the CSV path and relevant record count. The CLI is unaffected.
+
+### Fixed
+- **Extraction truncation**: bumped `extract_fields` `max_tokens` from 500 → 1024. With 5+ output fields, 500 tokens was insufficient, causing truncated JSON that was silently dropped.
+- **Screening robustness**: bumped `screen_paper` `max_tokens` from 150 → 256.
+- **JSON parse resilience**: `parse_json_response` now falls back to searching for the first `{...}` block in the response if a direct parse fails, handling LLM preamble text that would previously cause silent record drops.
+
 ## [0.1.9] — 2026-03-17
 
 ### Fixed

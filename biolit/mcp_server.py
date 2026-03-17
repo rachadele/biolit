@@ -30,9 +30,6 @@ from biolit.pipeline import (
     resolve_fulltext,
     run as _run,
     screen_paper as _screen_paper,
-    screen_by_pmid as _screen_by_pmid,
-    screen_by_doi as _screen_by_doi,
-    screen_by_geo as _screen_by_geo,
 )
 from biolit.utils import extract_pmids, read_eml_body
 
@@ -175,52 +172,6 @@ def extract_fields(
 
 
 @mcp.tool()
-def screen_by_pmid(
-    pmid: str,
-    criterion: str,
-    unpaywall_email: str = "",
-) -> dict:
-    """Fetch a PubMed paper and screen it for relevance in one step.
-
-    Full-text retrieval is always attempted (PMC → Europe PMC → preprint →
-    Unpaywall PDF → Semantic Scholar PDF), falling back to the abstract if
-    nothing is available.
-
-    Args:
-        pmid: PubMed ID.
-        criterion: A yes/no relevance question, e.g.
-            "Is this paper specifically about schizophrenia genomics?"
-        unpaywall_email: Your email for the Unpaywall API.
-            Falls back to UNPAYWALL_EMAIL env var.
-
-    Returns:
-        {"relevant": true | false, "reason": "one sentence",
-         "text_source": "abstract" | "pmc_fulltext" | ...}
-    """
-    email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
-    return _screen_by_pmid(_llm, pmid, criterion, unpaywall_email=email)
-
-
-@mcp.tool()
-def screen_by_geo(
-    accession: str,
-    criterion: str,
-) -> dict:
-    """Fetch a GEO record and screen it for relevance in one step.
-
-    Args:
-        accession: GEO accession (e.g. GSE123456).
-        criterion: A yes/no relevance question, e.g.
-            "Is this dataset about schizophrenia?"
-
-    Returns:
-        {"relevant": true | false, "reason": "one sentence",
-         "text_source": "geo_metadata"}
-    """
-    return _screen_by_geo(_llm, accession, criterion)
-
-
-@mcp.tool()
 def resolve_doi(doi: str) -> dict:
     """Resolve a DOI to a PMID and/or PMCID via the NCBI ID Converter.
 
@@ -237,33 +188,6 @@ def resolve_doi(doi: str) -> dict:
         "pmid": doi_to_pmid(doi),
         "pmcid": doi_to_pmcid(doi),
     }
-
-
-@mcp.tool()
-def screen_by_doi(
-    doi: str,
-    criterion: str,
-    unpaywall_email: str = "",
-) -> dict:
-    """Fetch a paper by DOI and screen it for relevance in one step.
-
-    Handles papers that have no PMID (e.g. bioRxiv/medRxiv preprints).
-    Tries sources in order: preprint JATS XML → Europe PMC →
-    Unpaywall PDF → Semantic Scholar PDF → preprint abstract API fallback.
-
-    Args:
-        doi: DOI string, e.g. "10.64898/2026.02.16.706214".
-        criterion: A yes/no relevance question.
-        unpaywall_email: Email for the Unpaywall API (optional).
-
-    Returns:
-        {"relevant": true | false, "reason": "one sentence",
-         "text_source": "preprint_fulltext" | "europepmc_fulltext" |
-                         "unpaywall_pdf" | "s2_pdf" | "preprint_abstract",
-         "doi": "..."}
-    """
-    email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
-    return _screen_by_doi(_llm, doi, criterion, unpaywall_email=email)
 
 
 @mcp.tool()
@@ -313,11 +237,11 @@ def run_pipeline(
             Falls back to UNPAYWALL_EMAIL env var.
 
     Returns:
-        {"output_path": "...", "id_count": N}
+        {"output_path": "..." | null, "relevant_count": N}
     """
     id_list = [x.strip() for x in ids.split(",") if x.strip()]
     email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
-    _run(
+    csv_path, relevant_count = _run(
         client=_llm,
         ids=id_list,
         criterion=criterion,
@@ -325,7 +249,7 @@ def run_pipeline(
         output_path=output_path,
         unpaywall_email=email,
     )
-    return {"output_path": output_path, "id_count": len(id_list)}
+    return {"output_path": csv_path, "relevant_count": relevant_count}
 
 
 @mcp.tool()

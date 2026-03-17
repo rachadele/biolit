@@ -52,7 +52,7 @@ def screen_paper(client: BaseLLMClient, paper: dict, criterion: str, text: str) 
     )
     response = client.chat(
         [{"role": "user", "content": prompt}],
-        max_tokens=150,
+        max_tokens=256,
     )
     return parse_json_response(response)
 
@@ -72,7 +72,7 @@ def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text
     )
     response = client.chat(
         [{"role": "user", "content": prompt}],
-        max_tokens=500,
+        max_tokens=1024,
     )
     result = parse_json_response(response)
     result["title"] = paper["title"]
@@ -346,7 +346,7 @@ def run(
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
-) -> None:
+) -> tuple[str | None, int]:
     """Screen and extract a mixed list of PMIDs, DOIs, and GEO accessions.
 
     Each identifier is auto-detected and routed to the appropriate fetcher.
@@ -455,7 +455,7 @@ def run(
 
     if not results:
         print("\nNo relevant records found.", file=sys.stderr)
-        return
+        return None, 0
 
     priority = ["title", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"]
     all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
@@ -467,6 +467,7 @@ def run(
         writer.writerows(results)
 
     print(f"\nWrote {len(results)} relevant records to {csv_path}", file=sys.stderr)
+    return csv_path, len(results)
 
 
 def _safe_name(value: str) -> str:

@@ -63,10 +63,21 @@ def read_pmids_file(path: str) -> list[str]:
 
 
 def parse_json_response(text: str) -> dict:
-    """Parse JSON from an LLM response, stripping markdown code fences if present."""
+    """Parse JSON from an LLM response.
+
+    Strips markdown code fences, then tries a direct parse. If that fails,
+    searches for the first {...} block in the response (handles preamble text).
+    """
     text = text.strip()
     text = re.sub(r'^```(?:json)?\s*', '', text)
     text = re.sub(r'\s*```$', '', text)
-    return json.loads(text.strip())
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+        raise
 
 
