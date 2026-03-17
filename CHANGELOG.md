@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.9] — 2026-03-17
+
+### Fixed
+- **MCP server performance** — all `print()` calls in `pipeline.py` now write to `sys.stderr` instead of `stdout`. Writing progress output to `stdout` was corrupting the MCP stdio JSON-RPC stream, causing the server to stall waiting for responses that never arrived. The CLI is unaffected.
+
 ## [0.1.8] — 2026-03-17
 
 ### Added

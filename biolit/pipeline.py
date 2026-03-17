@@ -2,6 +2,7 @@
 import csv
 import json
 import os
+import sys
 from datetime import datetime
 
 from biolit.fetchers.geo import fetch_geo_record
@@ -206,7 +207,7 @@ def resolve_fulltext(
                 if secs:
                     return select_sections(secs, sections_wanted, max_chars), "unpaywall_pdf", artifacts
             except ImportError:
-                print("  [warning] pdfminer.six not installed; skipping PDF parsing")
+                print("  [warning] pdfminer.six not installed; skipping PDF parsing", file=sys.stderr)
 
     # 5. Semantic Scholar open-access PDF
     if doi:
@@ -218,7 +219,7 @@ def resolve_fulltext(
                 if secs:
                     return select_sections(secs, sections_wanted, max_chars), "s2_pdf", artifacts
             except ImportError:
-                print("  [warning] pdfminer.six not installed; skipping PDF parsing")
+                print("  [warning] pdfminer.six not installed; skipping PDF parsing", file=sys.stderr)
 
     # 6. Abstract fallback
     # For DOI-only preprints, fetch_record() already populated paper["abstract"]
@@ -352,30 +353,30 @@ def run(
     All record types flow through the same screen → extract → artifacts → CSV loop.
     The output CSV always includes pmid, doi, and geo_accession columns.
     """
-    print("Building output schema...")
+    print("Building output schema...", file=sys.stderr)
     output_schema = build_output_schema(client, fields_description)
-    print(f"  Fields: {', '.join(output_schema.keys())}\n")
+    print(f"  Fields: {', '.join(output_schema.keys())}\n", file=sys.stderr)
 
-    print(f"Processing {len(ids)} identifiers\n")
+    print(f"Processing {len(ids)} identifiers\n", file=sys.stderr)
 
     run_dir, csv_path = _make_run_dir(output_path)
     artifacts_root = os.path.join(run_dir, "artifacts")
     os.makedirs(artifacts_root, exist_ok=True)
-    print(f"Run directory: {run_dir}\n")
+    print(f"Run directory: {run_dir}\n", file=sys.stderr)
 
     results = []
     for i, id_str in enumerate(ids, 1):
         id_type = _detect_id_type(id_str)
-        print(f"[{i}/{len(ids)}] {id_str}", end=" ... ", flush=True)
+        print(f"[{i}/{len(ids)}] {id_str}", end=" ... ", flush=True, file=sys.stderr)
 
         try:
             paper = fetch_record(id_str)
         except Exception as e:
-            print(f"fetch error: {e}")
+            print(f"fetch error: {e}", file=sys.stderr)
             continue
 
         if not paper:
-            print("skipped (not found)")
+            print("skipped (not found)", file=sys.stderr)
             continue
 
         # GEO records use their metadata text directly; all others attempt full-text.
@@ -386,7 +387,7 @@ def run(
             source = paper.get("text_source", "geo_metadata")
             fulltext_artifacts = {}
         else:
-            print("resolving full text...", end=" ", flush=True)
+            print("resolving full text...", end=" ", flush=True, file=sys.stderr)
             text, source, fulltext_artifacts = resolve_fulltext(
                 paper, unpaywall_email, sections_wanted, max_chars
             )
@@ -420,20 +421,20 @@ def run(
         _write_bytes(os.path.join(paper_dir, "s2_fulltext.pdf"), fulltext_artifacts.get("s2_pdf"))
 
         if not text:
-            print("skipped (no content)")
+            print("skipped (no content)", file=sys.stderr)
             continue
 
         try:
             screening = screen_paper(client, paper, criterion, text)
         except Exception as e:
-            print(f"screening error: {e}")
+            print(f"screening error: {e}", file=sys.stderr)
             continue
 
         if not screening.get("relevant"):
-            print(f"not relevant ({screening.get('reason', '')})")
+            print(f"not relevant ({screening.get('reason', '')})", file=sys.stderr)
             continue
 
-        print(f"relevant [{source}] — extracting fields")
+        print(f"relevant [{source}] — extracting fields", file=sys.stderr)
 
         try:
             result = extract_fields(client, paper, output_schema, text)
@@ -450,10 +451,10 @@ def run(
                 result["linked_pmids"] = ", ".join(paper.get("pmids", []))
             results.append(result)
         except Exception as e:
-            print(f"  extraction error: {e}")
+            print(f"  extraction error: {e}", file=sys.stderr)
 
     if not results:
-        print("\nNo relevant records found.")
+        print("\nNo relevant records found.", file=sys.stderr)
         return
 
     priority = ["title", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"]
@@ -465,7 +466,7 @@ def run(
         writer.writeheader()
         writer.writerows(results)
 
-    print(f"\nWrote {len(results)} relevant records to {csv_path}")
+    print(f"\nWrote {len(results)} relevant records to {csv_path}", file=sys.stderr)
 
 
 def _safe_name(value: str) -> str:

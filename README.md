@@ -255,9 +255,7 @@ run(client, ids=["41627908", "GSE53987", "10.1101/2025.03.17.25324098"],
 
 ## Known Limitations
 
-- Preprint DOIs not yet indexed in PubMed (no PMID) are handled natively via the bioRxiv/medRxiv API — they are not skipped.
 - Papers without abstracts or accessible full text are skipped silently.
 - Full-text retrieval applies to PubMed and DOI inputs only; GEO records always use the record metadata directly.
 - bioRxiv/medRxiv JATS XML is frequently blocked by Cloudflare regardless of headers. The pipeline falls back to the title and abstract from the bioRxiv API (`text_source: preprint_abstract`).
-- DOIs passed via `--dois` or a DOI file are resolved to PMIDs before the batch pipeline runs. DOIs that can't be resolved (e.g. preprints not yet indexed in PubMed) are skipped. Use `biolit screen --doi` to screen an individual unresolvable DOI.
 - The Semantic Scholar API allows roughly 100 unauthenticated requests per day. Set `SEMANTIC_SCHOLAR_API_KEY` in `.env` for higher limits.
