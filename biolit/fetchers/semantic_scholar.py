@@ -1,12 +1,12 @@
-"""Fetch open-access PDFs via the Semantic Scholar API.
+"""Fetch open-access PDFs and citation counts via the Semantic Scholar API.
 
 Semantic Scholar indexes open-access PDFs for a large fraction of academic
 papers, including bioRxiv/medRxiv preprints that are blocked by Cloudflare
 when fetched directly.
 
 API docs: https://api.semanticscholar.org/api-docs/
-Authentication: set SEMANTIC_SCHOLAR_API_KEY environment variable.
-Rate limit: 1 req/s with key (unauthenticated is much lower).
+Authentication: set SEMANTIC_SCHOLAR_API_KEY environment variable (optional).
+Rate limit: 1 req/s with key; unauthenticated is lower but fine for small batches.
 """
 import os
 import requests
@@ -66,3 +66,39 @@ def get_s2_pdf_url(doi: str) -> str | None:
         return oa.get("url") or None
     except Exception:
         return None
+
+
+def _s2_paper_lookup(identifier: str, fields: str) -> dict | None:
+    """Fetch paper data from Semantic Scholar for *identifier* (e.g. 'DOI:...', 'PMID:...').
+
+    Returns the parsed JSON dict, or None on 404 / any error.
+    """
+    try:
+        resp = requests.get(
+            f"{_S2_BASE}/paper/{identifier}",
+            params={"fields": fields},
+            headers=_s2_headers(),
+            timeout=15,
+        )
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
+        return None
+
+
+def get_citation_count(doi: str | None = None, pmid: str | None = None) -> int | None:
+    """Return the citation count for a paper from Semantic Scholar.
+
+    Tries PMID first (broader coverage for PubMed papers), then DOI.
+    Returns None if the paper is not found or any error occurs.
+    """
+    data = None
+    if pmid:
+        data = _s2_paper_lookup(f"PMID:{pmid}", "citationCount")
+    if data is None and doi:
+        data = _s2_paper_lookup(f"DOI:{doi}", "citationCount")
+    if data is None:
+        return None
+    return data.get("citationCount")

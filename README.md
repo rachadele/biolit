@@ -144,6 +144,7 @@ With `--default` on PubMed inputs, the CSV columns are:
 | `pmid` | PubMed ID |
 | `doi` | DOI |
 | `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`) |
+| `citation_count` | Citation count from Semantic Scholar (null if not found) |
 | `methodology` | General method (e.g. GWAS, scRNA-seq, proteomics) |
 | `sample_type` | Tissue/sample type and origin |
 | `causal_claims` | Statements about causes of schizophrenia inferred from the data |

@@ -15,9 +15,6 @@ MINIML_WITH_NS = b"""<?xml version="1.0" encoding="UTF-8"?>
     <Sample iid="GSM1">
       <Organism>Homo sapiens</Organism>
     </Sample>
-    <Sample iid="GSM2">
-      <Organism>Homo sapiens</Organism>
-    </Sample>
   </Series>
 </MINiML>
 """
@@ -45,66 +42,41 @@ MINIML_MISSING_FIELDS = b"""<?xml version="1.0" encoding="UTF-8"?>
 
 
 class TestParseMiniml:
-    def test_parses_title(self):
+    def test_parses_complete_record(self):
         result = _parse_miniml("GSE53987", MINIML_WITH_NS)
         assert result["title"] == "Microarray profiling of PFC, HPC and STR"
-
-    def test_parses_summary_into_abstract(self):
-        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
-        assert "Gene expression profiling" in result["abstract"]
-
-    def test_parses_overall_design_into_abstract(self):
-        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
-        assert "Matched cases and controls" in result["abstract"]
-
-    def test_parses_experiment_type_into_abstract(self):
-        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
-        assert "Expression profiling by array" in result["abstract"]
-
-    def test_parses_single_pmid(self):
-        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        assert result["accession"] == "GSE53987"
+        assert "GSE53987" in result["url"]
+        assert result["text_source"] == "geo_record"
         assert result["pmids"] == ["31123247"]
         assert result["pmid"] == "31123247"
+
+    def test_abstract_combines_summary_design_and_type(self):
+        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        assert "Gene expression profiling" in result["abstract"]
+        assert "Matched cases and controls" in result["abstract"]
+        assert "Expression profiling by array" in result["abstract"]
 
     def test_parses_multiple_pmids(self):
         result = _parse_miniml("GSE99999", MINIML_NO_NS)
         assert result["pmids"] == ["12345678", "87654321"]
         assert result["pmid"] == "12345678"
 
-    def test_no_pmids_sets_pmid_to_none(self):
-        result = _parse_miniml("GSE00001", MINIML_MISSING_FIELDS)
-        assert result["pmid"] is None
-        assert result["pmids"] == []
-
-    def test_url_contains_accession(self):
-        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
-        assert "GSE53987" in result["url"]
-
-    def test_accession_stored(self):
-        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
-        assert result["accession"] == "GSE53987"
-
-    def test_text_source_is_geo_record(self):
-        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
-        assert result["text_source"] == "geo_record"
-
     def test_handles_missing_optional_fields(self):
         result = _parse_miniml("GSE00001", MINIML_MISSING_FIELDS)
         assert result is not None
         assert result["title"] == "Minimal series"
         assert result["abstract"] == ""
+        assert result["pmid"] is None
+        assert result["pmids"] == []
 
     def test_returns_none_for_invalid_xml(self):
-        result = _parse_miniml("GSE00001", b"this is not xml <<<")
-        assert result is None
+        assert _parse_miniml("GSE00001", b"this is not xml <<<") is None
 
     def test_returns_none_when_no_series_element(self):
         xml = b"""<?xml version="1.0"?><MINiML><Platform iid="GPL1"/></MINiML>"""
-        result = _parse_miniml("GSE00001", xml)
-        assert result is None
+        assert _parse_miniml("GSE00001", xml) is None
 
-    def test_handles_namespace(self):
-        with_ns = _parse_miniml("GSE53987", MINIML_WITH_NS)
-        without_ns = _parse_miniml("GSE99999", MINIML_NO_NS)
-        assert with_ns is not None
-        assert without_ns is not None
+    def test_handles_both_namespace_variants(self):
+        assert _parse_miniml("GSE53987", MINIML_WITH_NS) is not None
+        assert _parse_miniml("GSE99999", MINIML_NO_NS) is not None
