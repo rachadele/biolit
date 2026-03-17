@@ -17,6 +17,8 @@ PACKAGE_STRUCTURE.md
 .mcp.json
 docs/existing-mcp-servers.md
 docs/mcp-implementation-plan.md
+docs/elsevier-api-plan.md
+docs/presentation/
 *.egg-info/
 dist/
 .claude/

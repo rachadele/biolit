@@ -170,7 +170,6 @@ def screen_by_pmid(
     client: BaseLLMClient,
     pmid: str,
     criterion: str,
-    fulltext: bool = False,
     unpaywall_email: str | None = None,
 ) -> dict:
     """Fetch a PubMed paper and screen it for relevance in one call.
@@ -181,12 +180,7 @@ def screen_by_pmid(
     if paper is None:
         return {"error": f"No record found for PMID {pmid}"}
 
-    if fulltext:
-        text, source, _ = resolve_fulltext(paper, unpaywall_email=unpaywall_email)
-    else:
-        text = paper.get("abstract", "")
-        source = "abstract"
-
+    text, source, _ = resolve_fulltext(paper, unpaywall_email=unpaywall_email)
     result = screen_paper(client, paper, criterion, text)
     result["text_source"] = source
     return result
@@ -293,7 +287,6 @@ def run(
     criterion: str,
     fields_description: str,
     output_path: str,
-    fulltext: bool = False,
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
@@ -325,16 +318,11 @@ def run(
             print("skipped (not found)")
             continue
 
-        if fulltext:
-            print("resolving full text...", end=" ", flush=True)
-            text, source, fulltext_artifacts = resolve_fulltext(
-                paper, unpaywall_email, sections_wanted, max_chars
-            )
-            paper["text_source"] = source
-        else:
-            text = paper.get("abstract", "")
-            paper["text_source"] = "abstract"
-            fulltext_artifacts = {}
+        print("resolving full text...", end=" ", flush=True)
+        text, source, fulltext_artifacts = resolve_fulltext(
+            paper, unpaywall_email, sections_wanted, max_chars
+        )
+        paper["text_source"] = source
 
         # Persist what we retrieved/sent so the run is reproducible and inspectable.
         paper_slug = f"{pmid}_{_safe_name(paper.get('title', 'paper'))}"

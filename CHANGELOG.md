@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.7] — 2026-03-17
+
+### Changed
+- **Full-text retrieval is now always-on** — the `--fulltext` CLI flag has been removed. Every PubMed run now attempts full-text retrieval automatically (PMC → Europe PMC → preprint → Unpaywall → Semantic Scholar PDF → abstract fallback). The `fulltext` parameter has been removed from `screen_by_pmid()`, `run()`, and the MCP tools `screen_by_pmid` and `run_pipeline`.
+
 ## [0.1.6] — 2026-03-16
 
 ### Added

@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from biolit.llm.base import BaseLLMClient
-from biolit.pipeline import run, run_geo, build_output_schema, screen_paper, extract_fields, screen_by_doi, resolve_fulltext
+from biolit.pipeline import run, run_geo, build_output_schema, screen_paper, extract_fields, screen_by_doi, screen_by_pmid, resolve_fulltext
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
@@ -156,8 +156,9 @@ class TestPipelineRun:
         return FakeLLMClient(responses)
 
     @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *args, **kw: (p.get("abstract", ""), "abstract", {}))
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_one_relevant_paper_writes_csv(self, mock_fetch, mock_citations, eml_path, tmp_path):
+    def test_one_relevant_paper_writes_csv(self, mock_fetch, mock_resolve, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
         mock_citations.return_value = 99
         client = self._make_client(paper1_relevant=True, paper2_relevant=False)
@@ -169,7 +170,6 @@ class TestPipelineRun:
             criterion="Is this about schizophrenia genomics?",
             fields_description="methodology, summary",
             output_path=str(output),
-            fulltext=False,
         )
 
         csv_path = _find_csv(tmp_path)
@@ -181,8 +181,9 @@ class TestPipelineRun:
         assert rows[0]["text_source"] == "abstract"
 
     @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *args, **kw: (p.get("abstract", ""), "abstract", {}))
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_no_relevant_papers_no_csv(self, mock_fetch, mock_citations, eml_path, tmp_path):
+    def test_no_relevant_papers_no_csv(self, mock_fetch, mock_resolve, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
         mock_citations.return_value = None
         schema_resp = '{"methodology": "method"}'
@@ -196,14 +197,14 @@ class TestPipelineRun:
             criterion="Unrelated criterion",
             fields_description="methodology",
             output_path=str(output),
-            fulltext=False,
         )
 
         assert _find_csv(tmp_path) is None, "CSV should not be created when no papers are relevant"
 
     @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *args, **kw: (p.get("abstract", ""), "abstract", {}))
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_fetch_error_is_skipped_gracefully(self, mock_fetch, mock_citations, eml_path, tmp_path):
+    def test_fetch_error_is_skipped_gracefully(self, mock_fetch, mock_resolve, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [Exception("Network error"), FAKE_PAPER_2]
         mock_citations.return_value = None
         schema_resp = '{"methodology": "method"}'
@@ -218,7 +219,6 @@ class TestPipelineRun:
             criterion="Any",
             fields_description="methodology",
             output_path=str(output),
-            fulltext=False,
         )
 
     @patch("biolit.pipeline.get_citation_count")
@@ -242,7 +242,6 @@ class TestPipelineRun:
             criterion="Is this about schizophrenia?",
             fields_description="methodology, summary",
             output_path=str(output),
-            fulltext=True,
         )
 
         csv_path = _find_csv(tmp_path)
@@ -252,8 +251,9 @@ class TestPipelineRun:
         assert rows[0]["text_source"] == "pmc_fulltext"
 
     @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *args, **kw: (p.get("abstract", ""), "abstract", {}))
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_csv_contains_required_columns(self, mock_fetch, mock_citations, eml_path, tmp_path):
+    def test_csv_contains_required_columns(self, mock_fetch, mock_resolve, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
         mock_citations.return_value = 5
         client = self._make_client(paper1_relevant=True, paper2_relevant=False)
@@ -265,7 +265,6 @@ class TestPipelineRun:
             criterion="Any",
             fields_description="methodology, summary",
             output_path=str(output),
-            fulltext=False,
         )
 
         csv_path = _find_csv(tmp_path)
@@ -274,8 +273,9 @@ class TestPipelineRun:
         assert set(["title", "url", "pmid", "text_source", "citation_count"]).issubset(set(reader.fieldnames))
 
     @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *args, **kw: (p.get("abstract", ""), "abstract", {}))
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_citation_count_written_to_csv(self, mock_fetch, mock_citations, eml_path, tmp_path):
+    def test_citation_count_written_to_csv(self, mock_fetch, mock_resolve, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
         mock_citations.return_value = 42
         client = self._make_client(paper1_relevant=True, paper2_relevant=False)
@@ -287,7 +287,6 @@ class TestPipelineRun:
             criterion="Any",
             fields_description="methodology, summary",
             output_path=str(output),
-            fulltext=False,
         )
 
         csv_path = _find_csv(tmp_path)
@@ -574,3 +573,40 @@ class TestResolveFulltextS2:
         with patch("biolit.pipeline.fetch_preprint", return_value=None):
             resolve_fulltext(paper_no_doi)
         mock_s2.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# screen_by_pmid
+# ---------------------------------------------------------------------------
+
+class TestScreenByPmid:
+    def _make_client(self, relevant=True):
+        resp = json.dumps({"relevant": relevant, "reason": "Reason."})
+        return FakeLLMClient([resp])
+
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_always_calls_resolve_fulltext(self, mock_fetch, mock_resolve, sample_pubmed_metadata):
+        mock_fetch.return_value = sample_pubmed_metadata
+        mock_resolve.return_value = ("abstract text", "abstract", {})
+        client = self._make_client()
+        screen_by_pmid(client, "41795042", "Is this relevant?")
+        mock_resolve.assert_called_once()
+
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_returns_error_when_paper_not_found(self, mock_fetch, mock_resolve):
+        mock_fetch.return_value = None
+        client = self._make_client()
+        result = screen_by_pmid(client, "00000000", "Is this relevant?")
+        assert "error" in result
+        mock_resolve.assert_not_called()
+
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_text_source_comes_from_resolve_fulltext(self, mock_fetch, mock_resolve, sample_pubmed_metadata):
+        mock_fetch.return_value = sample_pubmed_metadata
+        mock_resolve.return_value = ("full text content", "pmc_fulltext", {})
+        client = self._make_client()
+        result = screen_by_pmid(client, "41795042", "Is this relevant?")
+        assert result["text_source"] == "pmc_fulltext"

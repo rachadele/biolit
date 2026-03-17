@@ -179,26 +179,27 @@ def extract_fields(
 def screen_by_pmid(
     pmid: str,
     criterion: str,
-    fulltext: bool = False,
     unpaywall_email: str = "",
 ) -> dict:
     """Fetch a PubMed paper and screen it for relevance in one step.
+
+    Full-text retrieval is always attempted (PMC → Europe PMC → preprint →
+    Unpaywall PDF → Semantic Scholar PDF), falling back to the abstract if
+    nothing is available.
 
     Args:
         pmid: PubMed ID.
         criterion: A yes/no relevance question, e.g.
             "Is this paper specifically about schizophrenia genomics?"
-        fulltext: If True, attempt to retrieve full text before screening.
-            Falls back to abstract if full text is unavailable.
-        unpaywall_email: Your email for the Unpaywall API (only used when
-            fulltext=True). Falls back to UNPAYWALL_EMAIL env var.
+        unpaywall_email: Your email for the Unpaywall API.
+            Falls back to UNPAYWALL_EMAIL env var.
 
     Returns:
         {"relevant": true | false, "reason": "one sentence",
          "text_source": "abstract" | "pmc_fulltext" | ...}
     """
     email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
-    return _screen_by_pmid(_llm, pmid, criterion, fulltext=fulltext, unpaywall_email=email)
+    return _screen_by_pmid(_llm, pmid, criterion, unpaywall_email=email)
 
 
 @mcp.tool()
@@ -290,13 +291,12 @@ def run_pipeline(
     criterion: str,
     fields: str,
     output_path: str = "results.csv",
-    fulltext: bool = False,
     unpaywall_email: str = "",
 ) -> dict:
     """Run the full screen + extract pipeline on a list of PMIDs and write a CSV.
 
     This is equivalent to running `biolit --pmids ... --criterion ... --fields ...`
-    from the command line.
+    from the command line. Full-text retrieval is always attempted.
 
     Args:
         pmids: Comma-separated PubMed IDs.
@@ -305,8 +305,8 @@ def run_pipeline(
             "methodology, sample_type, causal_claims, summary"
         output_path: Path for the output CSV (default: results.csv).
             A timestamped run directory is created alongside it.
-        fulltext: If True, attempt full-text retrieval before screening.
-        unpaywall_email: Email for the Unpaywall API (only used when fulltext=True).
+        unpaywall_email: Email for the Unpaywall API.
+            Falls back to UNPAYWALL_EMAIL env var.
 
     Returns:
         {"output_path": "...", "relevant_count": N}
@@ -319,7 +319,6 @@ def run_pipeline(
         criterion=criterion,
         fields_description=fields,
         output_path=output_path,
-        fulltext=fulltext,
         unpaywall_email=email,
     )
     return {"output_path": output_path, "pmid_count": len(pmid_list)}

@@ -1,9 +1,9 @@
 """Tests for CLI input detection and dispatch logic."""
 import pathlib
-from unittest.mock import patch, MagicMock
 import pytest
+from unittest.mock import patch, MagicMock
 
-from biolit.cli import _peek_first_value, _resolve_dois
+from biolit.cli import _peek_first_value, _resolve_dois, _screen_main, _run_main
 from biolit.utils import read_geo_file, read_pmids_file
 
 REAL_PMIDS = ["41795042", "41792186", "41785323"]
@@ -64,3 +64,17 @@ class TestResolveDois:
         mock_resolve.return_value = None
         result = _resolve_dois(["10.9999/bad"])
         assert result == []
+
+
+class TestFulltextFlagRemoved:
+    """--fulltext is no longer a valid flag in either subcommand."""
+
+    def test_screen_rejects_fulltext_flag(self):
+        with pytest.raises(SystemExit):
+            _screen_main(["--pmid", "41795042", "--criterion", "x", "--fulltext"])
+
+    def test_run_rejects_fulltext_flag(self, tmp_path):
+        pmids_file = tmp_path / "p.txt"
+        pmids_file.write_text("41795042\n")
+        with pytest.raises(SystemExit):
+            _run_main([str(pmids_file), "--criterion", "x", "--fields", "summary", "--fulltext"])
