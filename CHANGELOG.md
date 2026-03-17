@@ -2,6 +2,14 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.12] — 2026-03-17
+
+### Added
+- **`fetch_geo_fulltext` MCP tool** — retrieves full text for a GEO accession via its linked PMIDs (same chain as `fetch_fulltext`); returns `{"text": "...", "source": "geo_linked_fulltext" | "geo_linked_abstract" | "geo_record"}`. Useful for custom MCP workflows that call tools individually rather than using `run_pipeline`.
+
+### Changed
+- **`run_pipeline` MCP tool docstring** — corrected description of GEO full-text behaviour (now accurately reflects that linked PMIDs are tried before falling back to GEO metadata).
+
 ## [0.1.11] — 2026-03-17
 
 ### Added

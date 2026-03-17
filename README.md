@@ -216,6 +216,7 @@ Add a `.mcp.json` in your project root:
 | `search_pubmed` | Fetch PubMed metadata by PMID |
 | `fetch_geo_record` | Fetch and parse a GEO record by accession |
 | `fetch_fulltext` | Retrieve full text for a PMID (6-step chain) |
+| `fetch_geo_fulltext` | Retrieve full text for a GEO accession via its linked PMIDs |
 | `screen_paper` | LLM relevance screen given pre-fetched text |
 | `extract_fields` | Structured field extraction given pre-fetched text |
 | `resolve_doi` | Resolve a DOI to PMID + PMCID via the NCBI ID Converter |

@@ -28,6 +28,7 @@ from biolit.pipeline import (
     build_output_schema,
     extract_fields as _extract_fields,
     resolve_fulltext,
+    _resolve_geo_fulltext,
     run as _run,
     screen_paper as _screen_paper,
 )
@@ -109,6 +110,39 @@ def fetch_fulltext(
     email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
 
     text, source, _ = resolve_fulltext(paper, unpaywall_email=email, sections_wanted=sections_wanted)
+    return {"text": text, "source": source}
+
+
+@mcp.tool()
+def fetch_geo_fulltext(
+    accession: str,
+    unpaywall_email: str = "",
+    sections: str = "",
+) -> dict:
+    """Retrieve full text for a GEO accession via its linked PubMed IDs.
+
+    Fetches the GEO record, then tries each linked PMID using the same
+    full-text chain as fetch_fulltext (PMC → Europe PMC → Unpaywall → S2).
+    Falls back to the linked paper's abstract, then to the GEO metadata text.
+
+    Args:
+        accession: GEO accession, e.g. "GSE53987".
+        unpaywall_email: Your email for the Unpaywall API. Falls back to the
+            UNPAYWALL_EMAIL env var.
+        sections: Comma-separated section names to include, e.g.
+            "methods,results". Default: all sections.
+
+    Returns:
+        {"text": "...", "source": "geo_linked_fulltext" | "geo_linked_abstract" | "geo_record"}
+    """
+    record = _fetch_geo_record(accession)
+    if record is None:
+        return {"error": f"No record found for accession {accession}"}
+
+    sections_wanted = [s.strip() for s in sections.split(",") if s.strip()] if sections else None
+    email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
+
+    text, source, _ = _resolve_geo_fulltext(record, unpaywall_email=email, sections_wanted=sections_wanted)
     return {"text": text, "source": source}
 
 
@@ -220,7 +254,8 @@ def run_pipeline(
 
     Accepts PMIDs, DOIs, and GEO accessions in any combination. Each identifier
     is auto-detected and routed to the appropriate fetcher. Full-text retrieval
-    is attempted for PubMed and DOI records; GEO records use their metadata text.
+    is attempted for all record types — GEO records use linked PMIDs as the
+    source, falling back to GEO metadata if none are accessible.
 
     This is equivalent to running `biolit --ids ... --criterion ... --fields ...`
     from the command line.
