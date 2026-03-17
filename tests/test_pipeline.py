@@ -155,9 +155,11 @@ class TestPipelineRun:
             responses.append('{"methodology": "scRNA-seq", "summary": "Transcriptomics study."}')
         return FakeLLMClient(responses)
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_one_relevant_paper_writes_csv(self, mock_fetch, eml_path, tmp_path):
+    def test_one_relevant_paper_writes_csv(self, mock_fetch, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        mock_citations.return_value = 99
         client = self._make_client(paper1_relevant=True, paper2_relevant=False)
         output = tmp_path / "results.csv"
 
@@ -178,9 +180,11 @@ class TestPipelineRun:
         assert rows[0]["methodology"] == "GWAS"
         assert rows[0]["text_source"] == "abstract"
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_no_relevant_papers_no_csv(self, mock_fetch, eml_path, tmp_path):
+    def test_no_relevant_papers_no_csv(self, mock_fetch, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        mock_citations.return_value = None
         schema_resp = '{"methodology": "method"}'
         screen_resp = '{"relevant": false, "reason": "Nope."}'
         client = FakeLLMClient([schema_resp, screen_resp, screen_resp])
@@ -197,9 +201,11 @@ class TestPipelineRun:
 
         assert _find_csv(tmp_path) is None, "CSV should not be created when no papers are relevant"
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_fetch_error_is_skipped_gracefully(self, mock_fetch, eml_path, tmp_path):
+    def test_fetch_error_is_skipped_gracefully(self, mock_fetch, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [Exception("Network error"), FAKE_PAPER_2]
+        mock_citations.return_value = None
         schema_resp = '{"methodology": "method"}'
         screen_resp = '{"relevant": false, "reason": "Nope."}'
         client = FakeLLMClient([schema_resp, screen_resp])
@@ -215,12 +221,13 @@ class TestPipelineRun:
             fulltext=False,
         )
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_pmc_fulltext")
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_fulltext_pmc_used_when_available(self, mock_fetch, mock_pmc, eml_path, tmp_path, sample_jats_xml):
+    def test_fulltext_pmc_used_when_available(self, mock_fetch, mock_pmc, mock_citations, eml_path, tmp_path, sample_jats_xml):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
-        # First paper has PMC full text; second does not
         mock_pmc.side_effect = [sample_jats_xml, None]
+        mock_citations.return_value = None
 
         schema_resp = '{"methodology": "method", "summary": "summary"}'
         screen_1 = '{"relevant": true, "reason": "Matches."}'
@@ -244,9 +251,11 @@ class TestPipelineRun:
         assert len(rows) == 1
         assert rows[0]["text_source"] == "pmc_fulltext"
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_csv_contains_required_columns(self, mock_fetch, eml_path, tmp_path):
+    def test_csv_contains_required_columns(self, mock_fetch, mock_citations, eml_path, tmp_path):
         mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        mock_citations.return_value = 5
         client = self._make_client(paper1_relevant=True, paper2_relevant=False)
         output = tmp_path / "results.csv"
 
@@ -262,7 +271,28 @@ class TestPipelineRun:
         csv_path = _find_csv(tmp_path)
         assert csv_path is not None
         reader = csv.DictReader(csv_path.open())
-        assert set(["title", "url", "pmid", "text_source"]).issubset(set(reader.fieldnames))
+        assert set(["title", "url", "pmid", "text_source", "citation_count"]).issubset(set(reader.fieldnames))
+
+    @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_citation_count_written_to_csv(self, mock_fetch, mock_citations, eml_path, tmp_path):
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        mock_citations.return_value = 42
+        client = self._make_client(paper1_relevant=True, paper2_relevant=False)
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            pmids=["41795042", "41792186"],
+            criterion="Any",
+            fields_description="methodology, summary",
+            output_path=str(output),
+            fulltext=False,
+        )
+
+        csv_path = _find_csv(tmp_path)
+        rows = list(csv.DictReader(csv_path.open()))
+        assert rows[0]["citation_count"] == "42"
 
 
 # ---------------------------------------------------------------------------
@@ -291,9 +321,11 @@ class TestRunGeo:
             responses.append('{"methodology": "Microarray", "summary": "Brain expression study."}')
         return FakeLLMClient(responses)
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_geo_record")
-    def test_relevant_record_writes_csv(self, mock_fetch, tmp_path):
+    def test_relevant_record_writes_csv(self, mock_fetch, mock_citations, tmp_path):
         mock_fetch.return_value = FAKE_GEO_RECORD
+        mock_citations.return_value = None
         client = self._make_client(relevant=True)
         output = tmp_path / "results.csv"
 
@@ -314,9 +346,11 @@ class TestRunGeo:
         assert rows[0]["pmids"] == "31123247"
         assert rows[0]["text_source"] == "geo_record"
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_geo_record")
-    def test_irrelevant_record_no_csv(self, mock_fetch, tmp_path):
+    def test_irrelevant_record_no_csv(self, mock_fetch, mock_citations, tmp_path):
         mock_fetch.return_value = FAKE_GEO_RECORD
+        mock_citations.return_value = None
         client = self._make_client(relevant=False)
         output = tmp_path / "results.csv"
 
@@ -331,9 +365,11 @@ class TestRunGeo:
         run_dir = next(tmp_path.iterdir())
         assert not (run_dir / "results.csv").exists()
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_geo_record")
-    def test_fetch_error_skipped_gracefully(self, mock_fetch, tmp_path):
+    def test_fetch_error_skipped_gracefully(self, mock_fetch, mock_citations, tmp_path):
         mock_fetch.side_effect = RuntimeError("GEO unavailable")
+        mock_citations.return_value = None
         client = self._make_client(relevant=True)
         output = tmp_path / "results.csv"
 
@@ -345,9 +381,11 @@ class TestRunGeo:
             output_path=str(output),
         )
 
+    @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.fetch_geo_record")
-    def test_pmid_column_not_duplicated(self, mock_fetch, tmp_path):
+    def test_pmid_column_not_duplicated(self, mock_fetch, mock_citations, tmp_path):
         mock_fetch.return_value = FAKE_GEO_RECORD
+        mock_citations.return_value = None
         client = self._make_client(relevant=True)
         output = tmp_path / "results.csv"
 
@@ -364,6 +402,27 @@ class TestRunGeo:
         assert "pmid" not in reader.fieldnames
         assert "geo_accession" in reader.fieldnames
         assert "pmids" in reader.fieldnames
+
+    @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.fetch_geo_record")
+    def test_citation_count_uses_first_linked_pmid(self, mock_fetch, mock_citations, tmp_path):
+        mock_fetch.return_value = FAKE_GEO_RECORD
+        mock_citations.return_value = 15
+        client = self._make_client(relevant=True)
+        output = tmp_path / "results.csv"
+
+        run_geo(
+            client=client,
+            accessions=["GSE53987"],
+            criterion="Any",
+            fields_description="methodology, summary",
+            output_path=str(output),
+        )
+
+        mock_citations.assert_called_once_with(doi=None, pmid="31123247")
+        run_dir = next(tmp_path.iterdir())
+        rows = list(csv.DictReader((run_dir / "results.csv").open()))
+        assert rows[0]["citation_count"] == "15"
 
 
 # ---------------------------------------------------------------------------

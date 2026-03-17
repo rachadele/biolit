@@ -9,7 +9,7 @@ from biolit.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext
 from biolit.fetchers.europepmc import fetch_europepmc_fulltext
 from biolit.fetchers.preprints import fetch_preprint, fetch_preprint_metadata
 from biolit.fetchers.unpaywall import fetch_via_unpaywall
-from biolit.fetchers.semantic_scholar import fetch_s2_pdf
+from biolit.fetchers.semantic_scholar import fetch_s2_pdf, get_citation_count
 from biolit.llm.base import BaseLLMClient
 from biolit.parsers.jats import parse_jats_sections
 from biolit.parsers.pdf import parse_pdf_sections
@@ -380,6 +380,9 @@ def run(
 
         try:
             result = extract_fields(client, paper, output_schema, text)
+            result["citation_count"] = get_citation_count(
+                doi=paper.get("doi"), pmid=paper.get("pmid")
+            )
             results.append(result)
         except Exception as e:
             print(f"  extraction error: {e}")
@@ -389,7 +392,7 @@ def run(
         print("\nNo relevant papers found.")
         return
 
-    priority = ["title", "url", "pmid", "doi", "text_source"]
+    priority = ["title", "url", "pmid", "doi", "text_source", "citation_count"]
     all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
     fieldnames = priority + [k for k in all_keys if k not in priority]
 
@@ -484,7 +487,13 @@ def run_geo(
             result = extract_fields(client, paper, output_schema, text)
             result.pop("pmid", None)  # accession is the identifier for GEO records
             result["geo_accession"] = accession
-            result["pmids"] = ", ".join(paper.get("pmids", []))
+            linked_pmids = paper.get("pmids", [])
+            result["pmids"] = ", ".join(linked_pmids)
+            # Use the first linked PMID for citation lookup (GEO records rarely have a DOI)
+            first_pmid = linked_pmids[0] if linked_pmids else None
+            result["citation_count"] = get_citation_count(
+                doi=paper.get("doi"), pmid=first_pmid
+            )
             results.append(result)
         except Exception as e:
             print(f"  extraction error: {e}")
@@ -493,7 +502,7 @@ def run_geo(
         print("\nNo relevant records found.")
         return
 
-    priority = ["title", "url", "geo_accession", "pmids", "doi", "text_source"]
+    priority = ["title", "url", "geo_accession", "pmids", "doi", "text_source", "citation_count"]
     all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
     fieldnames = priority + [k for k in all_keys if k not in priority]
 

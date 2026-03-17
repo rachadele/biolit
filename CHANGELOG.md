@@ -2,6 +2,15 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.6] — 2026-03-16
+
+### Added
+- **Citation counts** — `run()` and `run_geo()` now look up citation counts from the Semantic Scholar API after each extraction and write a `citation_count` column to the results CSV. Uses `PMID` lookup first, falls back to DOI. No API key required; set `SEMANTIC_SCHOLAR_API_KEY` for higher rate limits.
+- **`get_citation_count(doi, pmid)`** in `biolit/fetchers/semantic_scholar.py` — returns citation count for a paper given either identifier; returns `None` if not found.
+
+### Changed
+- **`doi_to_pmid`** in `biolit/fetchers/pubmed.py` now uses PubMed esearch (`{doi}[doi]` field query) instead of the NCBI ID Converter. This resolves DOIs for Elsevier and other non-PMC journals that were previously unresolvable.
+
 ## [0.1.5] — 2026-03-16
 
 ### Fixed

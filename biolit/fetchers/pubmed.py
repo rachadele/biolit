@@ -89,11 +89,18 @@ def doi_to_pmcid(doi: str) -> str | None:
 
 
 def doi_to_pmid(doi: str) -> str | None:
-    """Convert a DOI to a PMID via the NCBI ID Converter API."""
-    rec = _idconv_lookup(doi)
-    pmid = rec.get("pmid")
-    # ID converter returns pmid as a string integer; normalise to str
-    return str(pmid) if pmid else None
+    """Convert a DOI to a PMID via PubMed esearch."""
+    try:
+        resp = requests.get(
+            f"{NCBI_BASE}esearch.fcgi",
+            params=_ncbi_params(db="pubmed", term=f"{doi}[doi]", retmode="json"),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        ids = resp.json().get("esearchresult", {}).get("idlist", [])
+        return str(ids[0]) if ids else None
+    except Exception:
+        return None
 
 
 def fetch_pmc_fulltext(pmid: str) -> bytes | None:
