@@ -53,11 +53,11 @@ biolit identifiers.txt \
   --fields "methodology, sample_size, treatment, outcomes"
 ```
 
-Or use a JSON config file to store reusable parameters (CLI flags take precedence). The config can also include `ids`, so no positional argument or `--ids` flag is needed:
+Or use a JSON config file to store reusable parameters (CLI flags take precedence). The config can include `ids` or `input_file` (path to an `.eml` or identifier list), so no positional argument or `--ids` flag is needed:
 
 ```bash
 biolit alert.eml --config my_config.json
-biolit --config my_config.json   # ids supplied by config
+biolit --config my_config.json   # ids or input_file supplied by config
 ```
 
 Omit `--criterion` to skip screening (all records are extracted). Omit `--fields` to use the default fields (`methodology, sample_type, causal_claims, summary`):

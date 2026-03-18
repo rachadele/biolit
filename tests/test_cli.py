@@ -188,3 +188,105 @@ class TestRunMainConfig:
             _run_main([ids_file, "--config", str(config_file)])
 
         assert exc_info.value.code == 1
+
+
+class TestRunMainInputFileInConfig:
+    """Tests for input_file key in the JSON config."""
+
+    @patch("biolit.cli.run")
+    @patch("biolit.cli.get_llm_client")
+    def test_config_input_file_eml_reads_pmids(self, mock_llm, mock_run, tmp_path):
+        """input_file in config pointing to an .eml is parsed for PMIDs."""
+        eml = tmp_path / "alert.eml"
+        eml.write_text("dummy eml content")
+        cfg = {"input_file": str(eml)}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        mock_run.return_value = (None, 0)
+        mock_llm.return_value = MagicMock()
+
+        with patch("biolit.cli.load_config", return_value=cfg), \
+             patch("biolit.cli.read_eml_body", return_value="body text") as mock_eml, \
+             patch("biolit.cli.extract_pmids", return_value=["11111111", "22222222"]) as mock_extract:
+            _run_main(["--config", str(config_file)])
+
+        mock_eml.assert_called_once_with(str(eml))
+        mock_extract.assert_called_once_with("body text")
+        ids_passed = mock_run.call_args.kwargs["ids"]
+        assert ids_passed == ["11111111", "22222222"]
+
+    @patch("biolit.cli.run")
+    @patch("biolit.cli.get_llm_client")
+    def test_config_input_file_txt_reads_ids(self, mock_llm, mock_run, tmp_path):
+        """input_file in config pointing to a .txt file is read as an ID list."""
+        txt = tmp_path / "ids.txt"
+        txt.write_text("41795042\nGSE53987\n")
+        cfg = {"input_file": str(txt)}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        mock_run.return_value = (None, 0)
+        mock_llm.return_value = MagicMock()
+
+        with patch("biolit.cli.load_config", return_value=cfg):
+            _run_main(["--config", str(config_file)])
+
+        ids_passed = mock_run.call_args.kwargs["ids"]
+        assert ids_passed == ["41795042", "GSE53987"]
+
+    @patch("biolit.cli.run")
+    @patch("biolit.cli.get_llm_client")
+    def test_cli_positional_overrides_config_input_file(self, mock_llm, mock_run, tmp_path):
+        """A positional input_file arg takes precedence over input_file in the config."""
+        cli_txt = tmp_path / "cli_ids.txt"
+        cli_txt.write_text("99999999\n")
+        config_txt = tmp_path / "config_ids.txt"
+        config_txt.write_text("11111111\n")
+        cfg = {"input_file": str(config_txt)}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        mock_run.return_value = (None, 0)
+        mock_llm.return_value = MagicMock()
+
+        with patch("biolit.cli.load_config", return_value=cfg):
+            _run_main([str(cli_txt), "--config", str(config_file)])
+
+        ids_passed = mock_run.call_args.kwargs["ids"]
+        assert ids_passed == ["99999999"]
+
+    @patch("biolit.cli.run")
+    @patch("biolit.cli.get_llm_client")
+    def test_config_ids_takes_precedence_over_config_input_file(self, mock_llm, mock_run, tmp_path):
+        """ids in config takes precedence over input_file in config."""
+        txt = tmp_path / "ids.txt"
+        txt.write_text("should_not_be_read\n")
+        cfg = {"ids": "41795042,41792186", "input_file": str(txt)}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        mock_run.return_value = (None, 0)
+        mock_llm.return_value = MagicMock()
+
+        with patch("biolit.cli.load_config", return_value=cfg):
+            _run_main(["--config", str(config_file)])
+
+        ids_passed = mock_run.call_args.kwargs["ids"]
+        assert ids_passed == ["41795042", "41792186"]
+
+    @patch("biolit.cli.get_llm_client")
+    def test_no_input_at_all_exits_with_error(self, mock_llm, tmp_path, capsys):
+        """No positional arg, no --ids, no ids or input_file in config → sys.exit(1)."""
+        cfg = {"criterion": "Is this relevant?"}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        mock_llm.return_value = MagicMock()
+
+        with patch("biolit.cli.load_config", return_value=cfg), \
+             pytest.raises(SystemExit) as exc_info:
+            _run_main(["--config", str(config_file)])
+
+        assert exc_info.value.code == 1
+        assert "Error" in capsys.readouterr().out

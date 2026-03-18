@@ -93,7 +93,15 @@ class TestLoadConfig:
     def test_valid_keys_set_matches_documented_keys(self):
         """VALID_KEYS contains exactly the documented supported keys."""
         expected = {
-            "ids", "criterion", "fields", "provider", "model",
+            "ids", "input_file", "criterion", "fields", "provider", "model",
             "sections", "max_chars", "unpaywall_email", "output",
         }
         assert VALID_KEYS == expected
+
+    def test_input_file_key_is_accepted(self, tmp_path):
+        """input_file is a valid config key and its value is returned as-is."""
+        cfg = {"input_file": "docs/alert.eml"}
+        f = tmp_path / "config.json"
+        f.write_text(json.dumps(cfg))
+        result = load_config(str(f))
+        assert result["input_file"] == "docs/alert.eml"
