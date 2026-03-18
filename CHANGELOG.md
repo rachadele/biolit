@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.15] — 2026-03-18
+
+### Changed
+- **Renamed MCP tool `search_pubmed` → `fetch_pubmed_metadata`** — the tool fetches metadata for a known PMID; the old name incorrectly implied keyword search functionality.
+
 ## [0.1.14] — 2026-03-18
 
 ### Added

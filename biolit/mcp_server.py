@@ -23,7 +23,7 @@ from mcp.server.fastmcp import FastMCP
 from biolit.config import load_config
 
 from biolit.fetchers.geo import fetch_geo_record as _fetch_geo_record
-from biolit.fetchers.pubmed import fetch_pubmed_metadata, doi_to_pmid, doi_to_pmcid
+from biolit.fetchers.pubmed import fetch_pubmed_metadata as _fetch_pubmed_metadata, doi_to_pmid, doi_to_pmcid
 from biolit.fetchers.semantic_scholar import get_s2_pdf_url
 from biolit.llm import get_llm_client
 from biolit.pipeline import (
@@ -52,14 +52,14 @@ _llm = get_llm_client(_provider, _model)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def search_pubmed(pmid: str) -> dict:
+def fetch_pubmed_metadata(pmid: str) -> dict:
     """Fetch metadata for a PubMed ID.
 
     Returns title, abstract, MeSH terms, DOI, and a PubMed URL.
     Use this before calling screen_paper or extract_fields so you have the
     paper text and metadata to pass along.
     """
-    result = fetch_pubmed_metadata(pmid)
+    result = _fetch_pubmed_metadata(pmid)
     if result is None:
         return {"error": f"No record found for PMID {pmid}"}
     return result
@@ -104,7 +104,7 @@ def fetch_fulltext(
                                    "preprint_fulltext" | "unpaywall_pdf" |
                                    "s2_pdf" | "abstract"}
     """
-    paper = fetch_pubmed_metadata(pmid)
+    paper = _fetch_pubmed_metadata(pmid)
     if paper is None:
         return {"error": f"No record found for PMID {pmid}"}
 
