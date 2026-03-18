@@ -386,22 +386,28 @@ def _resolve_geo_fulltext(
 def run(
     client: BaseLLMClient,
     ids: list[str],
-    criterion: str,
-    fields_description: str,
-    output_path: str,
+    criterion: str | None = None,
+    fields_description: str | None = None,
+    output_path: str = "results.csv",
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> tuple[str | None, int]:
-    """Screen and extract a mixed list of PMIDs, DOIs, and GEO accessions.
+    """Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and GEO accessions.
 
     Each identifier is auto-detected and routed to the appropriate fetcher.
-    All record types flow through the same screen → extract → artifacts → CSV loop.
-    The output CSV always includes pmid, doi, and geo_accession columns.
+    All record types flow through the same fetch → (screen) → (extract) → artifacts → CSV loop.
+
+    - If *criterion* is None, the screening step is skipped and all records proceed to extraction.
+    - If *fields_description* is None, the extraction step is skipped and only metadata columns
+      (title, url, pmid, doi, geo_accession, text_source, citation_count) are written.
+    - The output CSV always includes pmid, doi, and geo_accession columns.
     """
-    print("Building output schema...", file=sys.stderr)
-    output_schema = build_output_schema(client, fields_description)
-    print(f"  Fields: {', '.join(output_schema.keys())}\n", file=sys.stderr)
+    output_schema: dict | None = None
+    if fields_description:
+        print("Building output schema...", file=sys.stderr)
+        output_schema = build_output_schema(client, fields_description)
+        print(f"  Fields: {', '.join(output_schema.keys())}\n", file=sys.stderr)
 
     print(f"Processing {len(ids)} identifiers\n", file=sys.stderr)
 
@@ -467,37 +473,60 @@ def run(
             print("skipped (no content)", file=sys.stderr)
             continue
 
-        try:
-            screening = screen_paper(client, paper, criterion, text)
-        except Exception as e:
-            print(f"screening error: {e}", file=sys.stderr)
-            continue
+        # ── Optional screening step ──────────────────────────────────────────
+        if criterion:
+            try:
+                screening = screen_paper(client, paper, criterion, text)
+            except Exception as e:
+                print(f"screening error: {e}", file=sys.stderr)
+                continue
 
-        if not screening.get("relevant"):
-            print(f"not relevant ({screening.get('reason', '')})", file=sys.stderr)
-            continue
+            if not screening.get("relevant"):
+                print(f"not relevant ({screening.get('reason', '')})", file=sys.stderr)
+                continue
 
-        print(f"relevant [{source}] — extracting fields", file=sys.stderr)
+            print(f"relevant [{source}]", end="", file=sys.stderr)
+        else:
+            print(f"[{source}]", end="", file=sys.stderr)
 
-        try:
-            result = extract_fields(client, paper, output_schema, text)
-            # For GEO records without a DOI, fall back to a linked PMID for citation lookup.
-            lookup_pmid = paper.get("pmid")
-            if not lookup_pmid and id_type == "geo":
-                linked = paper.get("pmids", [])
-                lookup_pmid = linked[0] if linked else None
-            result["citation_count"] = get_citation_count(
-                doi=paper.get("doi"), pmid=lookup_pmid
-            )
-            # Include all linked PMIDs for GEO records as an extra column.
+        # ── Common citation/linked-PMID helpers ──────────────────────────────
+        lookup_pmid = paper.get("pmid")
+        if not lookup_pmid and id_type == "geo":
+            linked = paper.get("pmids", [])
+            lookup_pmid = linked[0] if linked else None
+
+        # ── Optional extraction step ─────────────────────────────────────────
+        if output_schema:
+            print(" — extracting fields", file=sys.stderr)
+            try:
+                result = extract_fields(client, paper, output_schema, text)
+                result["citation_count"] = get_citation_count(
+                    doi=paper.get("doi"), pmid=lookup_pmid
+                )
+                if id_type == "geo":
+                    result["linked_pmids"] = ", ".join(paper.get("pmids", []))
+                results.append(result)
+            except Exception as e:
+                print(f"  extraction error: {e}", file=sys.stderr)
+        else:
+            print("", file=sys.stderr)
+            result = {
+                "title": paper.get("title"),
+                "url": paper.get("url"),
+                "pmid": paper.get("pmid"),
+                "doi": paper.get("doi"),
+                "geo_accession": paper.get("geo_accession"),
+                "text_source": source,
+                "citation_count": get_citation_count(
+                    doi=paper.get("doi"), pmid=lookup_pmid
+                ),
+            }
             if id_type == "geo":
                 result["linked_pmids"] = ", ".join(paper.get("pmids", []))
             results.append(result)
-        except Exception as e:
-            print(f"  extraction error: {e}", file=sys.stderr)
 
     if not results:
-        print("\nNo relevant records found.", file=sys.stderr)
+        print("\nNo records to write.", file=sys.stderr)
         return None, 0
 
     priority = ["title", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"]
@@ -509,7 +538,7 @@ def run(
         writer.writeheader()
         writer.writerows(results)
 
-    print(f"\nWrote {len(results)} relevant records to {csv_path}", file=sys.stderr)
+    print(f"\nWrote {len(results)} records to {csv_path}", file=sys.stderr)
     return csv_path, len(results)
 
 

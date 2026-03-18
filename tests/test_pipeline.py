@@ -728,3 +728,156 @@ class TestResolveGeoFulltext:
 
         assert len(text) == 50
         assert source == "geo_record"
+
+
+# ---------------------------------------------------------------------------
+# pipeline.run() with optional criterion / fields
+# ---------------------------------------------------------------------------
+
+class TestPipelineRunOptionalArgs:
+    """Tests for run() when criterion and/or fields_description are None."""
+
+    @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *a, **kw: (p.get("abstract", ""), "abstract", {}))
+    @patch("biolit.pipeline.fetch_record")
+    def test_no_criterion_all_records_pass_screening(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
+        """When criterion=None, all records pass through to the output CSV without screening."""
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        mock_citations.return_value = None
+        # schema build + two extract calls; no screen calls expected
+        schema_resp = '{"methodology": "method", "summary": "summary"}'
+        extract_1 = '{"methodology": "GWAS", "summary": "Study 1."}'
+        extract_2 = '{"methodology": "scRNA-seq", "summary": "Study 2."}'
+        client = FakeLLMClient([schema_resp, extract_1, extract_2])
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            ids=["41795042", "41792186"],
+            criterion=None,
+            fields_description="methodology, summary",
+            output_path=str(output),
+        )
+
+        csv_path = _find_csv(tmp_path)
+        assert csv_path is not None, "CSV should be written for all records when criterion=None"
+        rows = list(csv.DictReader(csv_path.open()))
+        assert len(rows) == 2, "Both records should appear in the CSV"
+        pmids = {r["pmid"] for r in rows}
+        assert pmids == {"41795042", "41792186"}
+
+    @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *a, **kw: (p.get("abstract", ""), "abstract", {}))
+    @patch("biolit.pipeline.fetch_record")
+    def test_no_fields_writes_metadata_only_rows(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
+        """When fields_description=None, metadata-only rows are written without calling extract_fields."""
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        mock_citations.return_value = 5
+        # With no fields, no schema build and no extract calls; screening still happens
+        screen_1 = '{"relevant": true, "reason": "Relevant."}'
+        screen_2 = '{"relevant": true, "reason": "Also relevant."}'
+        client = FakeLLMClient([screen_1, screen_2])
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            ids=["41795042", "41792186"],
+            criterion="Is this about schizophrenia?",
+            fields_description=None,
+            output_path=str(output),
+        )
+
+        csv_path = _find_csv(tmp_path)
+        assert csv_path is not None, "CSV should be written even when fields_description=None"
+        rows = list(csv.DictReader(csv_path.open()))
+        assert len(rows) == 2
+        # Metadata columns must be present
+        required = {"title", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"}
+        assert required.issubset(set(csv.DictReader(csv_path.open()).fieldnames))
+        # No LLM-extracted columns beyond the metadata set
+        extra_cols = set(csv.DictReader(csv_path.open()).fieldnames) - required - {"linked_pmids"}
+        assert extra_cols == set(), f"Unexpected extra columns: {extra_cols}"
+
+    @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *a, **kw: (p.get("abstract", ""), "abstract", {}))
+    @patch("biolit.pipeline.fetch_record")
+    def test_no_criterion_no_fields_writes_metadata_for_all(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
+        """When both criterion and fields_description are None, metadata rows for all records are written."""
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        mock_citations.return_value = None
+        # No LLM calls expected at all
+        client = FakeLLMClient([])
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            ids=["41795042", "41792186"],
+            criterion=None,
+            fields_description=None,
+            output_path=str(output),
+        )
+
+        csv_path = _find_csv(tmp_path)
+        assert csv_path is not None
+        rows = list(csv.DictReader(csv_path.open()))
+        assert len(rows) == 2
+        assert client.calls == [], "No LLM calls should be made when both criterion and fields are None"
+
+    @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *a, **kw: (p.get("abstract", ""), "abstract", {}))
+    @patch("biolit.pipeline.fetch_record")
+    def test_criterion_given_but_no_fields_writes_metadata_for_relevant(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
+        """When criterion is given but fields_description=None, passing records get metadata-only rows."""
+        mock_fetch.side_effect = [FAKE_PAPER_1, FAKE_PAPER_2]
+        mock_citations.return_value = None
+        # Paper 1 relevant, Paper 2 not relevant; no extract call expected
+        screen_1 = '{"relevant": true, "reason": "Relevant."}'
+        screen_2 = '{"relevant": false, "reason": "Not relevant."}'
+        client = FakeLLMClient([screen_1, screen_2])
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            ids=["41795042", "41792186"],
+            criterion="Is this about schizophrenia?",
+            fields_description=None,
+            output_path=str(output),
+        )
+
+        csv_path = _find_csv(tmp_path)
+        assert csv_path is not None
+        rows = list(csv.DictReader(csv_path.open()))
+        assert len(rows) == 1, "Only the relevant paper should appear"
+        assert rows[0]["pmid"] == "41795042"
+        # Only 2 LLM calls: two screen calls, no schema build or extract
+        assert len(client.calls) == 2
+
+    @patch("biolit.pipeline.get_citation_count")
+    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *a, **kw: (p.get("abstract", ""), "abstract", {}))
+    @patch("biolit.pipeline.fetch_record")
+    def test_metadata_row_has_correct_values(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
+        """Metadata-only rows have correct title, url, pmid, doi, text_source values."""
+        mock_fetch.return_value = FAKE_PAPER_1
+        mock_citations.return_value = 7
+        client = FakeLLMClient([])
+        output = tmp_path / "results.csv"
+
+        run(
+            client=client,
+            ids=["41795042"],
+            criterion=None,
+            fields_description=None,
+            output_path=str(output),
+        )
+
+        csv_path = _find_csv(tmp_path)
+        assert csv_path is not None
+        rows = list(csv.DictReader(csv_path.open()))
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["pmid"] == FAKE_PAPER_1["pmid"]
+        assert row["doi"] == FAKE_PAPER_1["doi"]
+        assert row["title"] == FAKE_PAPER_1["title"]
+        assert row["url"] == FAKE_PAPER_1["url"]
+        assert row["text_source"] == "abstract"
+        assert row["citation_count"] == "7"

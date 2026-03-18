@@ -20,6 +20,8 @@ import os
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
+from biolit.config import load_config
+
 from biolit.fetchers.geo import fetch_geo_record as _fetch_geo_record
 from biolit.fetchers.pubmed import fetch_pubmed_metadata, doi_to_pmid, doi_to_pmcid
 from biolit.fetchers.semantic_scholar import get_s2_pdf_url
@@ -244,45 +246,67 @@ def lookup_s2_pdf(doi: str) -> dict:
 
 @mcp.tool()
 def run_pipeline(
-    ids: str,
-    criterion: str,
-    fields: str,
-    output_path: str = "results.csv",
+    ids: str = "",
+    criterion: str = "",
+    fields: str = "",
+    output_path: str = "",
     unpaywall_email: str = "",
+    config_path: str = "",
 ) -> dict:
-    """Run the full screen + extract pipeline on a mixed list of identifiers and write a CSV.
+    """Run the fetch → (screen) → (extract) pipeline on a mixed list of identifiers and write a CSV.
 
     Accepts PMIDs, DOIs, and GEO accessions in any combination. Each identifier
     is auto-detected and routed to the appropriate fetcher. Full-text retrieval
     is attempted for all record types — GEO records use linked PMIDs as the
     source, falling back to GEO metadata if none are accessible.
 
-    This is equivalent to running `biolit --ids ... --criterion ... --fields ...`
-    from the command line.
+    This is equivalent to running `biolit --ids ...` from the command line.
 
     Args:
         ids: Comma-separated identifiers — PMIDs, DOIs, GEO accessions, or any mix.
             Example: "41795042,GSE53987,10.1101/2025.03.17.25324098"
-        criterion: Relevance screening question.
+            Leave empty to use the ids from config_path.
+        criterion: Relevance screening question. Leave empty to skip screening and
+            process all records. Overrides config_path value.
         fields: Comma-separated field names to extract, e.g.
-            "methodology, sample_type, causal_claims, summary"
-        output_path: Path for the output CSV (default: results.csv).
+            "methodology, sample_type, causal_claims, summary".
+            Leave empty to use the default fields or the value from config_path.
+            Overrides config_path value.
+        output_path: Path for the output CSV. Overrides config_path value.
             A timestamped run directory is created alongside it.
         unpaywall_email: Email for the Unpaywall API.
-            Falls back to UNPAYWALL_EMAIL env var.
+            Falls back to config_path value, then UNPAYWALL_EMAIL env var.
+        config_path: Path to a JSON config file. Supported keys: ids, criterion, fields,
+            output, unpaywall_email. Explicit arguments take precedence.
 
     Returns:
         {"output_path": "..." | null, "relevant_count": N}
     """
-    id_list = [x.strip() for x in ids.split(",") if x.strip()]
-    email = unpaywall_email or os.environ.get("UNPAYWALL_EMAIL")
+    # Load config file if provided; explicit args override it
+    config: dict = {}
+    if config_path:
+        try:
+            config = load_config(config_path)
+        except Exception as e:
+            return {"error": f"Failed to load config: {e}"}
+
+    from biolit.cli import DEFAULT_FIELDS
+    resolved_ids = ids or config.get("ids") or ""
+    if not resolved_ids:
+        return {"error": "No identifiers provided. Pass 'ids' or set 'ids' in config_path."}
+    resolved_criterion = criterion or config.get("criterion") or None
+    resolved_fields = fields or config.get("fields") or DEFAULT_FIELDS
+    resolved_output = output_path or config.get("output") or "results.csv"
+    resolved_email = unpaywall_email or config.get("unpaywall_email") or os.environ.get("UNPAYWALL_EMAIL")
+
+    id_list = [x.strip() for x in resolved_ids.split(",") if x.strip()]
     csv_path, relevant_count = _run(
         client=_llm,
         ids=id_list,
-        criterion=criterion,
-        fields_description=fields,
-        output_path=output_path,
-        unpaywall_email=email,
+        criterion=resolved_criterion,
+        fields_description=resolved_fields,
+        output_path=resolved_output,
+        unpaywall_email=resolved_email,
     )
     return {"output_path": csv_path, "relevant_count": relevant_count}
 

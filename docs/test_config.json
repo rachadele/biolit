@@ -1,0 +1,5 @@
+{
+  "ids": "10.1101/2025.03.17.25324098",
+  "criterion": "Is this paper SPECIFICALLY about schizophrenia AND does it use genetics or genomics methods (e.g. GWAS, WGS, scRNA-seq, proteomics, gene expression)?",
+  "fields": "methodology, sample_type, causal_claims, summary"
+}

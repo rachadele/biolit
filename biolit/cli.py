@@ -5,6 +5,7 @@ import sys
 
 from dotenv import load_dotenv
 
+from biolit.config import load_config
 from biolit.fetchers.pubmed import doi_to_pmid
 from biolit.llm import get_llm_client
 from biolit.pipeline import run, screen_by_pmid, screen_by_geo, screen_by_doi
@@ -17,7 +18,7 @@ DEFAULT_CRITERION = (
     "Is this paper SPECIFICALLY about schizophrenia AND does it use genetics "
     "or genomics methods (e.g. GWAS, WGS, scRNA-seq, proteomics, gene expression)?"
 )
-DEFAULT_FIELDS = "methodology, sample_type, causal_claims, genetics_claims, summary"
+DEFAULT_FIELDS = "methodology, sample_type, causal_claims, summary"
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -101,8 +102,8 @@ def _run_main(argv: list[str] | None = None) -> None:
             "LLM-assisted biomedical literature screening and extraction. "
             "Accepts a PubMed alert email (.eml), a plain-text file of identifiers, "
             "or inline identifiers via --ids. Identifiers can be PMIDs, DOIs, or GEO "
-            "accessions — mixed lists are supported. Screens each record for relevance, "
-            "then extracts structured fields into a CSV."
+            "accessions — mixed lists are supported. Optionally screens each record for "
+            "relevance (--criterion) and/or extracts structured fields (--fields) into a CSV."
         ),
         epilog=(
             "Examples:\n"
@@ -140,22 +141,28 @@ def _run_main(argv: list[str] | None = None) -> None:
 
     # Screening / extraction
     parser.add_argument("--criterion", default=None,
-                        help="Relevance screening criterion (yes/no question)")
+                        help="Relevance screening criterion (yes/no question). "
+                             "Omit to skip screening and process all records.")
     parser.add_argument("--fields", default=None,
-                        help="Fields to extract (comma-separated names)")
+                        help="Fields to extract (comma-separated names). "
+                             f"Default: \"{DEFAULT_FIELDS}\".")
     parser.add_argument("--default", action="store_true",
                         help="Use default schizophrenia genomics criterion and fields")
-    parser.add_argument("--output", default="results.csv",
+    parser.add_argument("--config", default=None, metavar="FILE",
+                        help="JSON config file. Keys: criterion, fields, provider, model, "
+                             "sections, max_chars, unpaywall_email, output. "
+                             "CLI flags take precedence over config values.")
+    parser.add_argument("--output", default=None,
                         help="Output CSV path (default: results.csv)")
 
     # LLM provider
     parser.add_argument(
-        "--provider", default=os.environ.get("LLM_PROVIDER", "anthropic"),
+        "--provider", default=None,
         choices=["anthropic", "openai", "ollama"],
-        help="LLM provider (default: anthropic, or LLM_PROVIDER env var)",
+        help="LLM provider (default: anthropic, or LLM_PROVIDER env var, or config file)",
     )
     parser.add_argument(
-        "--model", default=os.environ.get("LLM_MODEL"),
+        "--model", default=None,
         help="Model name for the chosen provider (uses provider default if omitted)",
     )
     parser.add_argument(
@@ -169,8 +176,8 @@ def _run_main(argv: list[str] | None = None) -> None:
 
     # Full-text options
     parser.add_argument(
-        "--unpaywall-email", default=os.environ.get("UNPAYWALL_EMAIL"),
-        help="Email for Unpaywall API (or set UNPAYWALL_EMAIL env var)",
+        "--unpaywall-email", default=None,
+        help="Email for Unpaywall API (or set UNPAYWALL_EMAIL env var, or config file)",
     )
     parser.add_argument(
         "--sections", default=None,
@@ -180,48 +187,64 @@ def _run_main(argv: list[str] | None = None) -> None:
         ),
     )
     parser.add_argument(
-        "--max-chars", type=int, default=DEFAULT_MAX_CHARS,
+        "--max-chars", type=int, default=None,
         help=f"Maximum characters of paper text sent to the LLM (default: {DEFAULT_MAX_CHARS})",
     )
 
     args = parser.parse_args(argv)
 
-    # Resolve criterion and fields
+    # Load config file (if given) — CLI flags take precedence
+    config: dict = {}
+    if args.config:
+        try:
+            config = load_config(args.config)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error loading config: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error loading config {args.config}: {e}")
+            sys.exit(1)
+
+    # Resolve all settings: CLI flag > config file > env var > hardcoded default
     if args.default:
         criterion = DEFAULT_CRITERION
         fields = DEFAULT_FIELDS
     else:
-        criterion = args.criterion
-        if not criterion:
-            criterion = input("Screening criterion (yes/no question about relevance): ").strip()
-        fields = args.fields
-        if not fields:
-            fields = input(
-                "Fields to extract (comma-separated, e.g. methodology, sample_type, summary): "
-            ).strip()
+        criterion = args.criterion or config.get("criterion")
+        fields = args.fields or config.get("fields") or DEFAULT_FIELDS
+
+    provider = args.provider or config.get("provider") or os.environ.get("LLM_PROVIDER", "anthropic")
+    model = args.model or config.get("model") or os.environ.get("LLM_MODEL")
+    unpaywall_email = args.unpaywall_email or config.get("unpaywall_email") or os.environ.get("UNPAYWALL_EMAIL")
+    sections_str = args.sections or config.get("sections")
+    max_chars = args.max_chars or config.get("max_chars") or DEFAULT_MAX_CHARS
+    output = args.output or config.get("output") or "results.csv"
 
     # Build LLM client
     try:
         extra: dict = {}
-        if args.provider == "openai" and args.openai_base_url:
+        if provider == "openai" and args.openai_base_url:
             extra["base_url"] = args.openai_base_url
-        if args.provider == "ollama":
+        if provider == "ollama":
             extra["base_url"] = args.ollama_url
-        client = get_llm_client(args.provider, args.model, **extra)
+        client = get_llm_client(provider, model, **extra)
     except (EnvironmentError, ImportError) as e:
         print(f"Error: {e}")
         sys.exit(1)
 
     print(f"Using LLM: {client}\n")
 
-    if not args.input_file and not args.ids:
-        print("Error: provide an input_file or --ids.")
+    if not args.input_file and not args.ids and not config.get("ids"):
+        print("Error: provide an input_file, --ids, or 'ids' in config.")
         sys.exit(1)
 
     # Build the identifier list from whichever input was given.
     if args.ids:
         ids = [x.strip() for x in args.ids.split(",") if x.strip()]
         print(f"Using {len(ids)} identifiers from --ids\n")
+    elif config.get("ids"):
+        ids = [x.strip() for x in config["ids"].split(",") if x.strip()]
+        print(f"Using {len(ids)} identifiers from config\n")
     elif args.input_file and args.input_file.endswith(".eml"):
         body = read_eml_body(args.input_file)
         ids = extract_pmids(body)
@@ -235,8 +258,8 @@ def _run_main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     sections_wanted = (
-        [s.strip() for s in args.sections.split(",") if s.strip()]
-        if args.sections
+        [s.strip() for s in sections_str.split(",") if s.strip()]
+        if sections_str
         else None
     )
     run(
@@ -244,10 +267,10 @@ def _run_main(argv: list[str] | None = None) -> None:
         ids=ids,
         criterion=criterion,
         fields_description=fields,
-        output_path=args.output,
-        unpaywall_email=args.unpaywall_email,
+        output_path=output,
+        unpaywall_email=unpaywall_email,
         sections_wanted=sections_wanted,
-        max_chars=args.max_chars,
+        max_chars=max_chars,
     )
 
 
