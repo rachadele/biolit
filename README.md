@@ -232,6 +232,7 @@ Add a `.mcp.json` in your project root:
 | `resolve_doi` | Resolve a DOI to PMID + PMCID via the NCBI ID Converter |
 | `lookup_s2_pdf` | Check whether Semantic Scholar has an open-access PDF for a DOI |
 | `read_pmids_from_eml` | Parse PMIDs from a PubMed alert `.eml` file |
+| `get_version` | Return the installed biolit package version |
 
 ### Use as a Python library
 

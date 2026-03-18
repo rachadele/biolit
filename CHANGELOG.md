@@ -2,6 +2,12 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.16] — 2026-03-18
+
+### Added
+- **`--version` CLI flag** — `biolit --version` prints the installed package version.
+- **`get_version` MCP tool** — returns the installed biolit package version from any MCP client.
+
 ## [0.1.15] — 2026-03-18
 
 ### Changed

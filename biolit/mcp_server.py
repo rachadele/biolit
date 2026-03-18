@@ -16,6 +16,7 @@ Environment variables (same as the CLI):
     UNPAYWALL_EMAIL     Used by fetch_fulltext if not passed as an argument
 """
 import os
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
@@ -50,6 +51,15 @@ _llm = get_llm_client(_provider, _model)
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
+
+@mcp.tool()
+def get_version() -> str:
+    """Return the installed biolit package version."""
+    try:
+        return _pkg_version("biolit")
+    except PackageNotFoundError:
+        return "unknown"
+
 
 @mcp.tool()
 def fetch_pubmed_metadata(pmid: str) -> dict:

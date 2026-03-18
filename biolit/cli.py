@@ -2,6 +2,7 @@
 import argparse
 import os
 import sys
+from importlib.metadata import version, PackageNotFoundError
 
 from dotenv import load_dotenv
 
@@ -21,9 +22,19 @@ DEFAULT_CRITERION = (
 DEFAULT_FIELDS = "methodology, sample_type, causal_claims, summary"
 
 
+def _get_version() -> str:
+    try:
+        return version("biolit")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def main(argv: list[str] | None = None) -> None:
     if argv is None:
         argv = sys.argv[1:]
+    if argv and argv[0] == "--version":
+        print(_get_version())
+        return
     if argv and argv[0] == "screen":
         return _screen_main(argv[1:])
     return _run_main(argv)
@@ -124,6 +135,7 @@ def _run_main(argv: list[str] | None = None) -> None:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {_get_version()}")
     parser.add_argument(
         "input_file", nargs="?", default=None,
         help=(
