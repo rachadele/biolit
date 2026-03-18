@@ -234,8 +234,10 @@ def _run_main(argv: list[str] | None = None) -> None:
 
     print(f"Using LLM: {client}\n")
 
-    if not args.input_file and not args.ids and not config.get("ids"):
-        print("Error: provide an input_file, --ids, or 'ids' in config.")
+    input_file = args.input_file or config.get("input_file")
+
+    if not input_file and not args.ids and not config.get("ids"):
+        print("Error: provide an input_file, --ids, or 'ids'/'input_file' in config.")
         sys.exit(1)
 
     # Build the identifier list from whichever input was given.
@@ -245,13 +247,13 @@ def _run_main(argv: list[str] | None = None) -> None:
     elif config.get("ids"):
         ids = [x.strip() for x in config["ids"].split(",") if x.strip()]
         print(f"Using {len(ids)} identifiers from config\n")
-    elif args.input_file and args.input_file.endswith(".eml"):
-        body = read_eml_body(args.input_file)
+    elif input_file and input_file.endswith(".eml"):
+        body = read_eml_body(input_file)
         ids = extract_pmids(body)
-        print(f"Found {len(ids)} PMIDs in {args.input_file}\n")
+        print(f"Found {len(ids)} PMIDs in {input_file}\n")
     else:
-        ids = _read_ids_file(args.input_file)
-        print(f"Read {len(ids)} identifiers from {args.input_file}\n")
+        ids = _read_ids_file(input_file)
+        print(f"Read {len(ids)} identifiers from {input_file}\n")
 
     if not ids:
         print("No identifiers found. Exiting.")

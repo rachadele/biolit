@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.14] — 2026-03-18
+
+### Added
+- **`input_file` config key** — `biolit/config.py` now accepts `input_file` as a valid JSON config key. Setting it to a path (`.eml` or identifier list) removes the need for a positional CLI argument when using `--config`. Priority: `--ids` CLI flag > `ids` in config > `input_file` in config > positional arg.
+
 ## [0.1.13] — 2026-03-18
 
 ### Added
