@@ -53,10 +53,21 @@ biolit identifiers.txt \
   --fields "methodology, sample_size, treatment, outcomes"
 ```
 
-Or interactively (prompted if not provided):
+Or use a JSON config file to store reusable parameters (CLI flags take precedence). The config can also include `ids`, so no positional argument or `--ids` flag is needed:
 
 ```bash
+biolit alert.eml --config my_config.json
+biolit --config my_config.json   # ids supplied by config
+```
+
+Omit `--criterion` to skip screening (all records are extracted). Omit `--fields` to use the default fields (`methodology, sample_type, causal_claims, summary`):
+
+```bash
+# fetch + extract with defaults (no screening)
 biolit alert.eml
+
+# fetch + screen only, then extract with defaults
+biolit alert.eml --criterion "Is this about treatment-resistant schizophrenia?"
 ```
 
 ### Single-record screening
@@ -134,7 +145,7 @@ Each run creates a timestamped directory (e.g. `run_20260313_142000/`) containin
 - `results.csv` — one row per relevant record
 - `artifacts/<id>/` — per-record folder with the text sent to the LLM, metadata, and any retrieved full-text files
 
-With `--default`, the CSV columns are:
+With default fields, the CSV columns are:
 
 | Column | Description |
 |---|---|
@@ -148,7 +159,6 @@ With `--default`, the CSV columns are:
 | `methodology` | General method (e.g. GWAS, scRNA-seq, proteomics) |
 | `sample_type` | Tissue/sample type and origin |
 | `causal_claims` | Statements about causes of schizophrenia inferred from the data |
-| `genetics_claims` | Claims about specific genes, loci, or pathways |
 | `summary` | 2-3 sentence plain-language summary for triage |
 
 GEO records additionally include a `linked_pmids` column listing all associated PubMed IDs.
@@ -207,7 +217,7 @@ Add a `.mcp.json` in your project root:
 
 | Tool | Description |
 |---|---|
-| `run_pipeline` | Screen + extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV |
+| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV. All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
 
 **Low-level** (for custom workflows):
 
@@ -234,9 +244,13 @@ from biolit.llm import get_llm_client
 client = get_llm_client("anthropic")
 
 # Batch pipeline — PMIDs, DOIs, and GEO accessions can be mixed freely
-# Returns (csv_path, relevant_count)
+# criterion and fields_description are optional; omit either to skip that step
+# Returns (csv_path, record_count)
 csv_path, count = run(client, ids=["41627908", "GSE53987", "10.1101/2025.03.17.25324098"],
     criterion="...", fields_description="methodology, summary", output_path="results.csv")
+
+# Fetch + write metadata only (no LLM calls)
+csv_path, count = run(client, ids=["41627908", "GSE53987"])
 
 # Fetch a single record (auto-detects PMID / DOI / GEO)
 paper = fetch_record("10.1101/2025.03.17.25324098")

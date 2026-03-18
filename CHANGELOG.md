@@ -2,6 +2,20 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.13] — 2026-03-18
+
+### Added
+- **JSON config file support** (`biolit/config.py`) — `load_config(path)` reads a JSON file with keys `ids`, `criterion`, `fields`, `provider`, `model`, `sections`, `max_chars`, `unpaywall_email`, `output`. Unknown keys raise `ValueError`. See `config.example.json` for a template.
+- **`--config FILE` CLI flag** — load any subset of run parameters (including `ids`) from a JSON file; explicit CLI flags take precedence. Priority: CLI flag > config file > env var > hardcoded default. A config with `ids` satisfies the input requirement — no positional argument or `--ids` needed.
+- **`config_path` parameter for `run_pipeline` MCP tool** — pass a path to a JSON config file to drive the entire run; explicit tool arguments override config values. `ids` in the config is used when the `ids` arg is empty.
+
+### Changed
+- **Screening and extraction are now optional** — `--criterion` skips the LLM screening step when omitted (all records pass through). Interactive prompts that previously forced input have been removed.
+- **Default fields always applied** — `--fields` defaults to `methodology, sample_type, causal_claims, summary`; pass `--fields` to override. When `fields_description=None` is passed directly to `pipeline.run()`, metadata-only rows are written instead.
+- **`genetics_claims` removed from default fields** — dropped from `DEFAULT_FIELDS`; include it explicitly via `--fields` if needed.
+- **`run_pipeline` MCP tool — all args now optional** — `ids`, `criterion`, `fields`, `output_path`, and `unpaywall_email` all default to empty string; `criterion` empty skips screening, `fields` empty uses `DEFAULT_FIELDS`.
+- **`pipeline.run()` signature** — `criterion`, `fields_description`, and `output_path` are now optional keyword arguments (default `None`, `None`, `"results.csv"`).
+
 ## [0.1.12] — 2026-03-17
 
 ### Added

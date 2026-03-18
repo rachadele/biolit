@@ -120,3 +120,88 @@ class TestRunPipeline:
         with patch("biolit.mcp_server._run", return_value=(None, 0)) as mock_run:
             run_pipeline(ids="41795042", criterion="criterion", fields="summary")
         assert mock_run.call_args.kwargs["unpaywall_email"] == "env@example.com"
+
+
+# ---------------------------------------------------------------------------
+# run_pipeline — config_path parameter and optional criterion/fields
+# ---------------------------------------------------------------------------
+
+class TestRunPipelineConfig:
+    """Tests for run_pipeline config_path handling and optional criterion/fields."""
+
+    def test_empty_criterion_passes_none_to_run(self):
+        """Empty criterion string → criterion=None (no screening)."""
+        from biolit.mcp_server import run_pipeline
+        with patch("biolit.mcp_server._run", return_value=(None, 0)) as mock_run:
+            run_pipeline(ids="41795042", criterion="", fields="summary")
+        assert mock_run.call_args.kwargs["criterion"] is None
+
+    def test_empty_fields_uses_default_fields(self):
+        """Empty fields string → DEFAULT_FIELDS from cli module."""
+        from biolit.mcp_server import run_pipeline
+        from biolit.cli import DEFAULT_FIELDS
+        with patch("biolit.mcp_server._run", return_value=(None, 0)) as mock_run:
+            run_pipeline(ids="41795042", criterion="criterion", fields="")
+        assert mock_run.call_args.kwargs["fields_description"] == DEFAULT_FIELDS
+
+    def test_config_path_loads_criterion_and_fields(self, tmp_path):
+        """config_path loads a config file and uses its criterion and fields."""
+        import json
+        cfg = {"criterion": "Config criterion", "fields": "methodology, summary"}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        from biolit.mcp_server import run_pipeline
+        with patch("biolit.mcp_server._run", return_value=(None, 0)) as mock_run:
+            result = run_pipeline(ids="41795042", config_path=str(config_file))
+
+        assert "error" not in result
+        assert mock_run.call_args.kwargs["criterion"] == "Config criterion"
+        assert mock_run.call_args.kwargs["fields_description"] == "methodology, summary"
+
+    def test_explicit_criterion_overrides_config(self, tmp_path):
+        """An explicit criterion argument overrides the config file value."""
+        import json
+        cfg = {"criterion": "Config criterion"}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        from biolit.mcp_server import run_pipeline
+        with patch("biolit.mcp_server._run", return_value=(None, 0)) as mock_run:
+            run_pipeline(ids="41795042", criterion="Explicit criterion",
+                         config_path=str(config_file))
+
+        assert mock_run.call_args.kwargs["criterion"] == "Explicit criterion"
+
+    def test_explicit_fields_override_config(self, tmp_path):
+        """An explicit fields argument overrides the config file value."""
+        import json
+        cfg = {"fields": "config_field"}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        from biolit.mcp_server import run_pipeline
+        with patch("biolit.mcp_server._run", return_value=(None, 0)) as mock_run:
+            run_pipeline(ids="41795042", fields="explicit_field",
+                         config_path=str(config_file))
+
+        assert mock_run.call_args.kwargs["fields_description"] == "explicit_field"
+
+    def test_bad_config_path_returns_error_dict(self, tmp_path):
+        """A config_path that doesn't exist returns an error dict, not a raised exception."""
+        missing = str(tmp_path / "nonexistent.json")
+        from biolit.mcp_server import run_pipeline
+        result = run_pipeline(ids="41795042", config_path=missing)
+        assert "error" in result
+        assert isinstance(result["error"], str)
+
+    def test_bad_config_content_returns_error_dict(self, tmp_path):
+        """A config_path with unknown keys returns an error dict."""
+        import json
+        config_file = tmp_path / "bad.json"
+        config_file.write_text(json.dumps({"unknown_key": "value"}))
+
+        from biolit.mcp_server import run_pipeline
+        result = run_pipeline(ids="41795042", config_path=str(config_file))
+        assert "error" in result
+        assert isinstance(result["error"], str)
