@@ -223,7 +223,7 @@ Add a `.mcp.json` in your project root:
 
 | Tool | Description |
 |---|---|
-| `search_pubmed` | Fetch PubMed metadata by PMID |
+| `fetch_pubmed_metadata` | Fetch PubMed metadata by PMID |
 | `fetch_geo_record` | Fetch and parse a GEO record by accession |
 | `fetch_fulltext` | Retrieve full text for a PMID (6-step chain) |
 | `fetch_geo_fulltext` | Retrieve full text for a GEO accession via its linked PMIDs |
