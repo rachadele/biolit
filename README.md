@@ -60,7 +60,7 @@ biolit alert.eml --config my_config.json
 biolit --config my_config.json   # ids or input_file supplied by config
 ```
 
-The `fields` key in a config file can be a comma-separated string or a JSON object mapping field names to extraction descriptions. Using a dict skips the schema-building LLM call and gives the model precise instructions:
+The `fields` key in a config file can be a comma-separated string or a JSON object mapping field names to extraction descriptions. When a string is used, an extra LLM call converts the field names into descriptions before extraction. When a dict is used, that call is skipped — the descriptions are passed directly to the model:
 
 ```json
 {
