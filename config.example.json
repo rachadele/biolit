@@ -1,6 +1,11 @@
 {
   "criterion": "Is this paper SPECIFICALLY about schizophrenia AND does it use genetics or genomics methods (e.g. GWAS, WGS, scRNA-seq, proteomics, gene expression)?",
-  "fields": "methodology, sample_type, causal_claims, summary",
+  "fields": {
+    "methodology": "experimental method used (e.g. GWAS, WGS, scRNA-seq, proteomics)",
+    "sample_type": "tissue type and biological origin of samples",
+    "causal_claims": "statements about causes of schizophrenia inferred from the data",
+    "summary": "2-3 sentence plain-language summary for triage"
+  },
   "provider": "anthropic",
   "model": "claude-haiku-4-5-20251001",
   "sections": "methods,results",

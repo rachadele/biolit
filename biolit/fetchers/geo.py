@@ -11,9 +11,9 @@ _RATE_DELAY = 0.4
 def fetch_geo_record(accession: str) -> dict | None:
     """Fetch a GEO series record and return a paper-shaped dict.
 
-    Fetches MINiML XML for *accession* (e.g. ``GSE12345``) and extracts:
-    title, summary, overall design, experiment type, organism, and any
-    linked PubMed IDs.
+    Fetches MINiML XML for *accession* (e.g. ``GSE12345``) with targ=all to
+    include Platform elements. Extracts: title, summary, overall design,
+    experiment type, organism, platform(s), sample count, and linked PubMed IDs.
 
     Returns a dict compatible with the pipeline's ``paper`` format so the
     same LLM screening and extraction calls work unchanged.
@@ -21,8 +21,8 @@ def fetch_geo_record(accession: str) -> dict | None:
     try:
         resp = requests.get(
             GEO_MINIML_URL,
-            params={"acc": accession, "targ": "self", "form": "xml", "view": "brief"},
-            timeout=30,
+            params={"acc": accession, "targ": "all", "form": "xml", "view": "brief"},
+            timeout=60,
         )
         resp.raise_for_status()
     except Exception as e:
@@ -31,7 +31,7 @@ def fetch_geo_record(accession: str) -> dict | None:
     time.sleep(_RATE_DELAY)
     record = _parse_miniml(accession, resp.content)
     if record is not None:
-        record["geo_xml"] = resp.content.decode("utf-8", errors="replace")
+        record["geo_metadata_text"] = format_geo_metadata(record)
     return record
 
 
@@ -63,12 +63,30 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
     overall_design = _text(series, "Overall-Design")
     experiment_type = _text(series, "Type")
     pmids = _all_text(series, "Pubmed-ID")
+    sample_count = len(series.findall(f"{ns}Sample-Ref"))
 
-    # Collect organism from child Sample elements — used for mesh_terms / screening
-    organisms = list({
-        _text(s, "Organism") or _text(s, "organism")
-        for s in root.findall(f".//{ns}Sample")
-    } - {""})
+    # Parse Platform elements (only present with targ=all)
+    platforms = []
+    for plat in root.findall(f"{ns}Platform"):
+        gpl = _text(plat, "Accession")
+        plat_title = _text(plat, "Title")
+        technology = _text(plat, "Technology")
+        plat_organism = _text(plat, "Organism")
+        if gpl:
+            platforms.append({
+                "accession": gpl,
+                "title": plat_title,
+                "technology": technology,
+                "organism": plat_organism,
+            })
+
+    # Collect organisms from Platform elements first, fall back to Sample elements
+    organisms = list({p["organism"] for p in platforms if p["organism"]})
+    if not organisms:
+        organisms = list({
+            _text(s, "Organism") or _text(s, "organism")
+            for s in root.findall(f".//{ns}Sample")
+        } - {""})
 
     # Build an abstract-like blob from the structured fields (used for screening)
     abstract_parts = []
@@ -91,5 +109,59 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
         "mesh_terms": ([experiment_type] if experiment_type else []) + organisms,
         "url": f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={accession}",
         "pmids": pmids,
+        "platforms": platforms,
+        "organisms": organisms,
+        "sample_count": sample_count,
         "text_source": "geo_record",
     }
+
+
+def format_geo_metadata(record: dict) -> str:
+    """Format parsed GEO record fields as clean labeled text for the LLM.
+
+    Produces a compact, human-readable block covering accession, type,
+    organism(s), platform(s), sample count, linked PMIDs, summary, and
+    overall design. Replaces the raw MINiML XML that was previously appended
+    to the LLM context.
+    """
+    lines = [f"=== GEO Metadata: {record.get('accession', '')} ==="]
+
+    if record.get("title"):
+        lines.append(f"Title: {record['title']}")
+
+    # Experiment type (from mesh_terms or abstract)
+    mesh = record.get("mesh_terms", [])
+    if mesh:
+        lines.append(f"Type: {mesh[0]}")
+
+    organisms = record.get("organisms", [])
+    if organisms:
+        lines.append(f"Organism(s): {', '.join(organisms)}")
+
+    platforms = record.get("platforms", [])
+    if platforms:
+        plat_strs = []
+        for p in platforms:
+            parts = [p["accession"]]
+            if p.get("title"):
+                parts.append(p["title"])
+            if p.get("technology"):
+                parts.append(f"[{p['technology']}]")
+            plat_strs.append(" — ".join(parts))
+        lines.append(f"Platform(s): {'; '.join(plat_strs)}")
+
+    if record.get("sample_count"):
+        lines.append(f"Sample count: {record['sample_count']}")
+
+    pmids = record.get("pmids", [])
+    if pmids:
+        lines.append(f"Linked PMID(s): {', '.join(pmids)}")
+
+    # Summary and Overall Design (from the abstract blob or re-extracted)
+    abstract = record.get("abstract", "")
+    for part in abstract.split("\n\n"):
+        if part.strip():
+            lines.append("")
+            lines.append(part.strip())
+
+    return "\n".join(lines)

@@ -356,14 +356,14 @@ def _resolve_geo_fulltext(
     Tries each linked PMID in order. Returns the first real full text found.
     Falls back to the first linked abstract, then to GEO metadata.
 
-    The raw GEO MINiML XML is always appended to the returned text so the LLM
-    has access to all structured GEO fields (platform, organism, etc.) even
-    when the main text comes from a linked publication.
+    Structured GEO metadata (platform, organism, summary, etc.) is always
+    prepended to the returned text so the LLM has access to key GEO fields
+    even when the main text comes from a linked publication.
 
     Returns (text, source_label, artifacts).
     """
-    geo_xml = paper.get("geo_xml", "")
-    geo_suffix = f"\n\n--- GEO MINiML XML ---\n{geo_xml}" if geo_xml else ""
+    geo_metadata = paper.get("geo_metadata_text", "")
+    geo_prefix = f"{geo_metadata}\n\n--- Linked Publication ---\n" if geo_metadata else ""
 
     first_linked_abstract: str | None = None
     first_linked_artifacts: dict = {}
@@ -380,18 +380,18 @@ def _resolve_geo_fulltext(
             linked_paper, unpaywall_email, sections_wanted, max_chars
         )
         if source != "abstract":
-            return f"{text}{geo_suffix}", "geo_linked_fulltext", artifacts
+            return f"{geo_prefix}{text}", "geo_linked_fulltext", artifacts
         if first_linked_abstract is None and text:
             first_linked_abstract = text
             first_linked_artifacts = artifacts
 
     if first_linked_abstract:
-        return f"{first_linked_abstract}{geo_suffix}", "geo_linked_abstract", first_linked_artifacts
+        return f"{geo_prefix}{first_linked_abstract}", "geo_linked_abstract", first_linked_artifacts
 
     geo_text = paper.get("abstract", "")
     if len(geo_text) > max_chars:
         geo_text = geo_text[:max_chars]
-    return f"{geo_text}{geo_suffix}", "geo_record", {}
+    return geo_metadata or geo_text, "geo_record", {}
 
 
 # ---------------------------------------------------------------------------
