@@ -1,10 +1,16 @@
 """Tests for GEO fetcher parsing logic (no network calls)."""
 import pytest
 
-from biolit.fetchers.geo import _parse_miniml
+from biolit.fetchers.geo import _parse_miniml, format_geo_metadata
 
 MINIML_WITH_NS = b"""<?xml version="1.0" encoding="UTF-8"?>
 <MINiML xmlns="http://www.ncbi.nlm.nih.gov/geo/info/MINiML">
+  <Platform iid="GPL570">
+    <Title>Affymetrix Human Genome U133 Plus 2.0 Array</Title>
+    <Accession database="GEO">GPL570</Accession>
+    <Technology>in situ oligonucleotide</Technology>
+    <Organism taxid="9606">Homo sapiens</Organism>
+  </Platform>
   <Series iid="GSE53987">
     <Title>Microarray profiling of PFC, HPC and STR</Title>
     <Accession database="GEO">GSE53987</Accession>
@@ -12,9 +18,8 @@ MINIML_WITH_NS = b"""<?xml version="1.0" encoding="UTF-8"?>
     <Overall-Design>Matched cases and controls, n=19 per group.</Overall-Design>
     <Type>Expression profiling by array</Type>
     <Pubmed-ID>31123247</Pubmed-ID>
-    <Sample iid="GSM1">
-      <Organism>Homo sapiens</Organism>
-    </Sample>
+    <Sample-Ref ref="GSM1"/>
+    <Sample-Ref ref="GSM2"/>
   </Series>
 </MINiML>
 """
@@ -80,3 +85,65 @@ class TestParseMiniml:
     def test_handles_both_namespace_variants(self):
         assert _parse_miniml("GSE53987", MINIML_WITH_NS) is not None
         assert _parse_miniml("GSE99999", MINIML_NO_NS) is not None
+
+    def test_parses_platform_accession_and_title(self):
+        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        assert len(result["platforms"]) == 1
+        plat = result["platforms"][0]
+        assert plat["accession"] == "GPL570"
+        assert plat["title"] == "Affymetrix Human Genome U133 Plus 2.0 Array"
+        assert plat["technology"] == "in situ oligonucleotide"
+
+    def test_organism_from_platform(self):
+        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        assert "Homo sapiens" in result["organisms"]
+
+    def test_sample_count_from_sample_refs(self):
+        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        assert result["sample_count"] == 2
+
+    def test_no_platforms_when_absent(self):
+        result = _parse_miniml("GSE99999", MINIML_NO_NS)
+        assert result["platforms"] == []
+        assert result["organisms"] == []
+        assert result["sample_count"] == 0
+
+
+class TestFormatGeoMetadata:
+    def test_includes_accession_header(self):
+        record = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        text = format_geo_metadata(record)
+        assert "GSE53987" in text
+
+    def test_includes_platform_info(self):
+        record = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        text = format_geo_metadata(record)
+        assert "GPL570" in text
+        assert "Affymetrix Human Genome U133 Plus 2.0 Array" in text
+
+    def test_includes_organism(self):
+        record = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        text = format_geo_metadata(record)
+        assert "Homo sapiens" in text
+
+    def test_includes_summary_and_design(self):
+        record = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        text = format_geo_metadata(record)
+        assert "Gene expression profiling" in text
+        assert "Matched cases and controls" in text
+
+    def test_includes_sample_count(self):
+        record = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        text = format_geo_metadata(record)
+        assert "2" in text  # sample count
+
+    def test_no_raw_xml_in_output(self):
+        record = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        text = format_geo_metadata(record)
+        assert "<MINiML" not in text
+        assert "<Series" not in text
+
+    def test_handles_missing_fields_gracefully(self):
+        record = _parse_miniml("GSE00001", MINIML_MISSING_FIELDS)
+        text = format_geo_metadata(record)
+        assert "GSE00001" in text  # at minimum the accession is present

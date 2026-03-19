@@ -2,6 +2,18 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.19] — 2026-03-18
+
+### Changed
+- **GEO fetch now uses `targ=all`** — `fetch_geo_record` fetches the full MINiML XML (including `Platform` elements) instead of the series-only brief view. This enables extraction of platform GPL accession, title, and technology directly in Python without an LLM call.
+- **Raw MINiML XML replaced with structured metadata text** — `_parse_miniml` now extracts `platforms`, `organisms`, and `sample_count` from the XML. A new `format_geo_metadata()` function produces a compact, human-readable block (accession, type, organism(s), platform(s), sample count, linked PMIDs, summary, overall design) stored as `geo_metadata_text` on the record. This replaces the raw `geo_xml` field that was previously appended to the LLM context.
+- **GEO metadata prepended, not appended** — `_resolve_geo_fulltext` now prepends the structured metadata block before any linked publication text (separated by `--- Linked Publication ---`), so the LLM always sees GEO-specific fields regardless of text source. Raw XML is no longer passed to the LLM.
+
+## [0.1.18] — 2026-03-18
+
+### Changed
+- **`fields` config key now accepts a JSON object** — in addition to a comma-separated string, `fields` in the JSON config file can be a `{field_name: description}` object. When a dict is provided, `build_output_schema` uses it directly and skips the schema-building LLM call. String `--fields` on the CLI continues to work as before.
+
 ## [0.1.17] — 2026-03-18
 
 ### Changed

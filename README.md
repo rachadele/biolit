@@ -60,6 +60,18 @@ biolit alert.eml --config my_config.json
 biolit --config my_config.json   # ids or input_file supplied by config
 ```
 
+The `fields` key in a config file can be a comma-separated string or a JSON object mapping field names to extraction descriptions. Using a dict skips the schema-building LLM call and gives the model precise instructions:
+
+```json
+{
+  "fields": {
+    "tf_name": "HGNC symbol of the transcription factor perturbed in this experiment",
+    "organism": "scientific name of the organism used",
+    "platform": "GPL accession of the microarray platform"
+  }
+}
+```
+
 Omit `--criterion` to skip screening (all records are extracted). Omit `--fields` to use the default fields (`methodology, sample_type, causal_claims, summary`):
 
 ```bash
