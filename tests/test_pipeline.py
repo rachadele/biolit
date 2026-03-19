@@ -649,13 +649,17 @@ GEO_PAPER_WITH_PMIDS = {
     "mesh_terms": [],
     "url": "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE53987",
     "pmids": ["31123247", "99999999"],
+    "geo_xml": "<MINiML><Series iid=\"GSE53987\"><Platform-Ref ref=\"GPL570\"/></Series></MINiML>",
     "text_source": "geo_record",
 }
 
 GEO_PAPER_NO_PMIDS = {**GEO_PAPER_WITH_PMIDS, "pmids": []}
+GEO_PAPER_NO_XML = {**GEO_PAPER_WITH_PMIDS, "geo_xml": ""}
 
 
 class TestResolveGeoFulltext:
+    XML_SUFFIX = "\n\n--- GEO MINiML XML ---\n" + GEO_PAPER_WITH_PMIDS["geo_xml"]
+
     @patch("biolit.pipeline.resolve_fulltext")
     @patch("biolit.pipeline.fetch_pubmed_metadata")
     def test_returns_linked_fulltext_when_available(self, mock_fetch_pm, mock_resolve):
@@ -664,7 +668,7 @@ class TestResolveGeoFulltext:
 
         text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
 
-        assert text == "full text content"
+        assert text == f"full text content{self.XML_SUFFIX}"
         assert source == "geo_linked_fulltext"
         assert artifacts == {"pmc_xml": b"<xml/>"}
 
@@ -676,14 +680,14 @@ class TestResolveGeoFulltext:
 
         text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
 
-        assert text == "Abstract of the linked paper."
+        assert text == f"Abstract of the linked paper.{self.XML_SUFFIX}"
         assert source == "geo_linked_abstract"
         assert artifacts == {}
 
     def test_falls_back_to_geo_record_when_no_pmids(self):
         text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_NO_PMIDS)
 
-        assert text == "GEO metadata summary text."
+        assert text == f"GEO metadata summary text.{self.XML_SUFFIX}"
         assert source == "geo_record"
         assert artifacts == {}
 
@@ -693,7 +697,7 @@ class TestResolveGeoFulltext:
 
         text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
 
-        assert text == "GEO metadata summary text."
+        assert text == f"GEO metadata summary text.{self.XML_SUFFIX}"
         assert source == "geo_record"
         assert artifacts == {}
 
@@ -703,7 +707,7 @@ class TestResolveGeoFulltext:
 
         text, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
 
-        assert text == "GEO metadata summary text."
+        assert text == f"GEO metadata summary text.{self.XML_SUFFIX}"
         assert source == "geo_record"
         assert artifacts == {}
 
@@ -726,7 +730,20 @@ class TestResolveGeoFulltext:
 
         text, source, _ = _resolve_geo_fulltext(paper, max_chars=50)
 
-        assert len(text) == 50
+        # abstract is truncated to max_chars; XML suffix is appended separately
+        assert "x" * 50 in text
+        assert "x" * 51 not in text
+        assert source == "geo_record"
+
+    def test_xml_appended_when_present(self):
+        text, _, _ = _resolve_geo_fulltext(GEO_PAPER_NO_PMIDS)
+        assert "--- GEO MINiML XML ---" in text
+        assert GEO_PAPER_WITH_PMIDS["geo_xml"] in text
+
+    def test_no_xml_suffix_when_geo_xml_absent(self):
+        paper = {**GEO_PAPER_NO_XML, "pmids": []}
+        text, source, _ = _resolve_geo_fulltext(paper)
+        assert "--- GEO MINiML XML ---" not in text
         assert source == "geo_record"
 
 

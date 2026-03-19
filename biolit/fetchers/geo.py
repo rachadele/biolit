@@ -29,7 +29,10 @@ def fetch_geo_record(accession: str) -> dict | None:
         raise RuntimeError(f"GEO fetch failed for {accession}: {e}") from e
 
     time.sleep(_RATE_DELAY)
-    return _parse_miniml(accession, resp.content)
+    record = _parse_miniml(accession, resp.content)
+    if record is not None:
+        record["geo_xml"] = resp.content.decode("utf-8", errors="replace")
+    return record
 
 
 def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
@@ -61,13 +64,13 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
     experiment_type = _text(series, "Type")
     pmids = _all_text(series, "Pubmed-ID")
 
-    # Collect organism from child Sample elements if not on Series directly
+    # Collect organism from child Sample elements — used for mesh_terms / screening
     organisms = list({
         _text(s, "Organism") or _text(s, "organism")
         for s in root.findall(f".//{ns}Sample")
     } - {""})
 
-    # Build an abstract-like blob from the structured fields
+    # Build an abstract-like blob from the structured fields (used for screening)
     abstract_parts = []
     if summary:
         abstract_parts.append(f"Summary: {summary}")
