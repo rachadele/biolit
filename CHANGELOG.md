@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.17] — 2026-03-18
+
+### Changed
+- **GEO full-text now includes raw MINiML XML** — `fetch_geo_record` stores the decoded MINiML XML as `geo_xml` on the record dict. `_resolve_geo_fulltext` appends it under a `--- GEO MINiML XML ---` separator for all text sources (`geo_linked_fulltext`, `geo_linked_abstract`, `geo_record`), so the LLM always has access to structured GEO fields (platform GPL accession, organism, etc.) even when the main text comes from a linked publication.
+
 ## [0.1.16] — 2026-03-18
 
 ### Added
