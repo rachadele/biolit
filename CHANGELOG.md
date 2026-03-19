@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.18] — 2026-03-18
+
+### Changed
+- **`fields` config key now accepts a JSON object** — in addition to a comma-separated string, `fields` in the JSON config file can be a `{field_name: description}` object. When a dict is provided, `build_output_schema` uses it directly and skips the schema-building LLM call. String `--fields` on the CLI continues to work as before.
+
 ## [0.1.17] — 2026-03-18
 
 ### Changed

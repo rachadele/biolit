@@ -22,8 +22,16 @@ from biolit.utils import parse_json_response
 # LLM helpers
 # ---------------------------------------------------------------------------
 
-def build_output_schema(client: BaseLLMClient, fields_description: str) -> dict:
-    """Translate a comma-separated field list into a schema dict via the LLM."""
+def build_output_schema(client: BaseLLMClient, fields_description: str | dict) -> dict:
+    """Translate a field spec into a schema dict.
+
+    *fields_description* can be:
+    - a dict mapping field names to extraction descriptions (used as-is, no LLM call)
+    - a comma-separated string of field names (LLM infers descriptions)
+    """
+    if isinstance(fields_description, dict):
+        return fields_description
+
     prompt = (
         f"Convert this list of field names into a JSON object where each key is a field name "
         f"and each value is a clear description of what to extract from a scientific paper.\n\n"
@@ -394,7 +402,7 @@ def run(
     client: BaseLLMClient,
     ids: list[str],
     criterion: str | None = None,
-    fields_description: str | None = None,
+    fields_description: str | dict | None = None,
     output_path: str = "results.csv",
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
