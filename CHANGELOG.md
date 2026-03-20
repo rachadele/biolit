@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.20] — 2026-03-20
+
+### Changed
+- **`DEFAULT_MAX_CHARS` increased to 50,000** — raised from 12,000 to 50,000 characters (~12,500 tokens) to improve full-text extraction quality by default.
+
 ## [0.1.19] — 2026-03-18
 
 ### Changed

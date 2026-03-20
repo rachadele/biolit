@@ -1,6 +1,6 @@
 """Shared parser utilities."""
 
-DEFAULT_MAX_CHARS = 12_000  # ~3 000 tokens — safe for most models
+DEFAULT_MAX_CHARS = 50_000  # ~12 500 tokens
 
 
 def select_sections(
