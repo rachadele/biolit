@@ -16,6 +16,7 @@ BIORXIV_API_RECORD = {
     "jatsxml": FAKE_JATS_URL,
     "version": "1",
     "server": "bioRxiv",
+    "authors": "Smith J; Jones A; Brown B",
 }
 
 
@@ -144,3 +145,16 @@ class TestFetchPreprintMetadata:
     def test_returns_none_on_network_error(self, mock_get):
         mock_get.side_effect = ConnectionError("timeout")
         assert fetch_preprint_metadata("10.1101/2021.01.01.425001") is None
+
+    @patch("biolit.fetchers.preprints.requests.get")
+    def test_authors_passed_through(self, mock_get):
+        mock_get.return_value = _api_resp([BIORXIV_API_RECORD])
+        result = fetch_preprint_metadata("10.64898/2026.03.05.709906")
+        assert result["authors"] == "Smith J; Jones A; Brown B"
+
+    @patch("biolit.fetchers.preprints.requests.get")
+    def test_authors_none_when_absent(self, mock_get):
+        record_no_authors = {k: v for k, v in BIORXIV_API_RECORD.items() if k != "authors"}
+        mock_get.return_value = _api_resp([record_no_authors])
+        result = fetch_preprint_metadata("10.64898/2026.03.05.709906")
+        assert result["authors"] is None

@@ -35,7 +35,7 @@ from biolit.pipeline import (
     run as _run,
     screen_paper as _screen_paper,
 )
-from biolit.utils import extract_pmids, read_eml_body
+from biolit.utils import extract_pmids, read_eml_body, read_ids_file, read_dois_from_bib
 
 load_dotenv()
 
@@ -263,6 +263,8 @@ def run_pipeline(
     unpaywall_email: str = "",
     config_path: str = "",
     markdown: bool = False,
+    bib_path: str = "",
+    ids_file: str = "",
 ) -> dict:
     """Run the fetch → (screen) → (extract) pipeline on a mixed list of identifiers and write a CSV.
 
@@ -276,7 +278,7 @@ def run_pipeline(
     Args:
         ids: Comma-separated identifiers — PMIDs, DOIs, GEO accessions, or any mix.
             Example: "41795042,GSE53987,10.1101/2025.03.17.25324098"
-            Leave empty to use the ids from config_path.
+            Leave empty to use ids from bib_path, ids_file, or config_path.
         criterion: Relevance screening question. Leave empty to skip screening and
             process all records. Overrides config_path value.
         fields: Comma-separated field names to extract, e.g.
@@ -290,6 +292,10 @@ def run_pipeline(
         config_path: Path to a JSON config file. Supported keys: ids, criterion, fields,
             output, unpaywall_email, markdown. Explicit arguments take precedence.
         markdown: If True, also write a results.md markdown summary alongside the CSV.
+        bib_path: Path to a BibTeX (.bib) file. DOIs are extracted from doi={...} fields.
+            Used when ids is empty. Takes precedence over ids_file.
+        ids_file: Path to a plain-text file of identifiers (one per line, mixed types OK).
+            Used when ids and bib_path are both empty.
 
     Returns:
         {"output_path": "..." | null, "relevant_count": N}
@@ -303,16 +309,32 @@ def run_pipeline(
             return {"error": f"Failed to load config: {e}"}
 
     from biolit.cli import DEFAULT_FIELDS
-    resolved_ids = ids or config.get("ids") or ""
-    if not resolved_ids:
-        return {"error": "No identifiers provided. Pass 'ids' or set 'ids' in config_path."}
+
+    # Resolve identifiers: inline ids > bib_path > ids_file > config ids
+    if ids:
+        id_list = [x.strip() for x in ids.split(",") if x.strip()]
+    elif bib_path:
+        try:
+            id_list = read_dois_from_bib(bib_path)
+        except Exception as e:
+            return {"error": f"Failed to read bib file: {e}"}
+    elif ids_file:
+        try:
+            id_list = read_ids_file(ids_file)
+        except Exception as e:
+            return {"error": f"Failed to read ids file: {e}"}
+    else:
+        resolved_ids = config.get("ids") or ""
+        id_list = [x.strip() for x in resolved_ids.split(",") if x.strip()]
+
+    if not id_list:
+        return {"error": "No identifiers provided. Pass 'ids', 'bib_path', 'ids_file', or set 'ids' in config_path."}
+
     resolved_criterion = criterion or config.get("criterion") or None
     resolved_fields = fields or config.get("fields") or DEFAULT_FIELDS
     resolved_output = output_path or config.get("output") or "results.csv"
     resolved_email = unpaywall_email or config.get("unpaywall_email") or os.environ.get("UNPAYWALL_EMAIL")
-
     resolved_markdown = markdown or bool(config.get("markdown"))
-    id_list = [x.strip() for x in resolved_ids.split(",") if x.strip()]
     csv_path, relevant_count = _run(
         client=_llm,
         ids=id_list,

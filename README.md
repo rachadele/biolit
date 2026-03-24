@@ -173,6 +173,7 @@ With default fields, the CSV columns are:
 | Column | Description |
 |---|---|
 | `title` | Paper title |
+| `authors` | Author list (comma-separated; parsed from PubMed XML, bioRxiv/medRxiv API, or GEO contributors) |
 | `url` | Link to PubMed, GEO, or DOI |
 | `pmid` | PubMed ID (null for unindexed preprints) |
 | `doi` | DOI (null for GEO records) |
@@ -240,7 +241,7 @@ Add a `.mcp.json` in your project root:
 
 | Tool | Description |
 |---|---|
-| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
+| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
 
 **Low-level** (for custom workflows):
 
