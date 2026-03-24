@@ -147,3 +147,31 @@ class TestFormatGeoMetadata:
         record = _parse_miniml("GSE00001", MINIML_MISSING_FIELDS)
         text = format_geo_metadata(record)
         assert "GSE00001" in text  # at minimum the accession is present
+
+
+MINIML_WITH_CONTRIBUTORS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<MINiML xmlns="http://www.ncbi.nlm.nih.gov/geo/info/MINiML">
+  <Contributor iid="contrib1">
+    <Person><First>Jane</First><Last>Smith</Last></Person>
+  </Contributor>
+  <Contributor iid="contrib2">
+    <Person><First>Bob</First><Last>Jones</Last></Person>
+  </Contributor>
+  <Series iid="GSE11111">
+    <Title>Single-cell RNA-seq of prefrontal cortex</Title>
+    <Type>Expression profiling by high throughput sequencing</Type>
+    <Contributor iid="contrib1"/>
+    <Contributor iid="contrib2"/>
+  </Series>
+</MINiML>
+"""
+
+
+class TestGeoAuthors:
+    def test_parses_contributor_names(self):
+        result = _parse_miniml("GSE11111", MINIML_WITH_CONTRIBUTORS)
+        assert result["authors"] == "Smith Jane, Jones Bob"
+
+    def test_no_contributors_returns_none(self):
+        result = _parse_miniml("GSE53987", MINIML_WITH_NS)
+        assert result["authors"] is None

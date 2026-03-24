@@ -65,6 +65,30 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
     pmids = _all_text(series, "Pubmed-ID")
     sample_count = len(series.findall(f"{ns}Sample-Ref"))
 
+    # Build a name index from top-level Contributor elements, then resolve
+    # the iid references listed inside the Series element.
+    contributor_index: dict[str, str] = {}
+    for contrib in root.findall(f"{ns}Contributor"):
+        iid = contrib.get("iid", "")
+        person = contrib.find(f"{ns}Person")
+        if person is not None:
+            first = (person.findtext(f"{ns}First") or "").strip()
+            last = (person.findtext(f"{ns}Last") or "").strip()
+            name = f"{last} {first}".strip() if last else first
+        else:
+            # Fallback: Organisation name
+            name = (contrib.findtext(f"{ns}Organization") or "").strip()
+        if iid and name:
+            contributor_index[iid] = name
+
+    author_parts = []
+    for ref in series.findall(f"{ns}Contributor"):
+        iid = ref.get("iid", "")
+        name = contributor_index.get(iid)
+        if name:
+            author_parts.append(name)
+    authors = ", ".join(author_parts) if author_parts else None
+
     # Parse Platform elements (only present with targ=all)
     platforms = []
     for plat in root.findall(f"{ns}Platform"):
@@ -107,6 +131,7 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
         "title": title,
         "abstract": abstract,
         "mesh_terms": ([experiment_type] if experiment_type else []) + organisms,
+        "authors": authors,
         "url": f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={accession}",
         "pmids": pmids,
         "platforms": platforms,

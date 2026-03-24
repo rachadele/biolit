@@ -84,6 +84,7 @@ def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text
     )
     result = parse_json_response(response)
     result["title"] = paper["title"]
+    result["authors"] = paper.get("authors")
     result["url"] = paper.get("url")
     result["pmid"] = paper.get("pmid")
     result["doi"] = paper.get("doi")
@@ -97,7 +98,7 @@ def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text
 # ---------------------------------------------------------------------------
 
 _MARKDOWN_META_KEYS = frozenset({
-    "title", "url", "pmid", "doi", "geo_accession", "text_source",
+    "title", "authors", "url", "pmid", "doi", "geo_accession", "text_source",
     "citation_count", "linked_pmids", "_stub", "_stub_reason",
 })
 
@@ -122,8 +123,12 @@ def format_record_markdown(
     text_source = record.get("text_source", "")
     citations = record.get("citation_count")
 
+    authors = record.get("authors")
+
     # Build metadata header lines
     meta_lines = []
+    if authors:
+        meta_lines.append(f"**Authors:** {authors}")
     if url:
         meta_lines.append(f"**URL:** {url}")
     if pmid:
@@ -237,6 +242,7 @@ def fetch_record(id_str: str) -> dict | None:
             "geo_accession": None,
             "url": f"https://doi.org/{id_str}",
             "mesh_terms": [],
+            "authors": meta.get("authors") if meta else None,
         }
 
     # PMID
@@ -470,6 +476,10 @@ def _resolve_geo_fulltext(
         if linked_paper is None:
             continue
 
+        # Propagate authors from the linked paper to the GEO record
+        if paper.get("authors") is None and linked_paper.get("authors"):
+            paper["authors"] = linked_paper["authors"]
+
         text, source, artifacts = resolve_fulltext(
             linked_paper, unpaywall_email, sections_wanted, max_chars
         )
@@ -642,6 +652,7 @@ def run(
             print("", file=sys.stderr)
             result = {
                 "title": paper.get("title"),
+                "authors": paper.get("authors"),
                 "url": paper.get("url"),
                 "pmid": paper.get("pmid"),
                 "doi": paper.get("doi"),
@@ -665,7 +676,7 @@ def run(
             print(f"Wrote markdown to {md_path}", file=sys.stderr)
         return None, 0
 
-    priority = ["title", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"]
+    priority = ["title", "authors", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"]
     all_keys = list(dict.fromkeys(k for r in results for k in r.keys()))
     fieldnames = priority + [k for k in all_keys if k not in priority]
 

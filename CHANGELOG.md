@@ -2,11 +2,18 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.21] — 2026-03-24
+
+### Added
+- **Author extraction** — `authors` column added to CSV and markdown output for all record types. PubMed records parse `<AuthorList>` from the E-utilities XML. Preprint records (bioRxiv/medRxiv) get authors from the API response. GEO records parse `<Contributor>` elements from MINiML XML; if none are present, authors are propagated from the first linked PubMed paper.
+
 ## [0.1.20] — 2026-03-24
 
 ### Added
 - **Markdown export** (`--markdown` / `--md` CLI flag; `"markdown": true` in config; `markdown=True` in `run()` and `run_pipeline` MCP tool) — writes a `results.md` prose summary alongside the CSV. Each record gets an LLM-rendered section with `### field` subsections. Records that failed or were skipped appear as stub entries with a failure note, with no extra LLM call.
-- **BibTeX input support** — `.bib` files are now accepted as positional input to the CLI. DOIs are extracted from `doi = {...}` fields via `read_dois_from_bib()` in `biolit/utils.py`; entries without a DOI are silently skipped.
+- **BibTeX and identifier file input for MCP `run_pipeline`** — added `bib_path` and `ids_file` parameters. `bib_path` accepts a path to a `.bib` file and extracts DOIs automatically; `ids_file` accepts a plain-text file of mixed identifiers (one per line). Precedence: `ids` > `bib_path` > `ids_file` > config `ids`.
+- **`read_ids_file(path)`** in `biolit/utils.py` — reads a plain-text file of mixed identifiers (PMIDs, DOIs, GEO accessions), skipping blank lines and comments.
+- **BibTeX input support (CLI)** — `.bib` files are now accepted as positional input to the CLI. DOIs are extracted from `doi = {...}` fields via `read_dois_from_bib()` in `biolit/utils.py`; entries without a DOI are silently skipped.
 - **Stub entries for all skip points** — records that fail at fetch, not-found, no-content, screening error, or extraction error stages all produce stub markdown entries. Previously only extraction errors produced stubs. "Not relevant" (screening returned false) remains intentionally silent.
 - **`format_record_markdown(client, record, output_schema)`** and **`generate_markdown_summary(client, records, output_schema)`** — new public functions in `biolit/pipeline.py` for rendering markdown from extracted records and stubs.
 - **`markdown` config key** — added to `VALID_KEYS` in `biolit/config.py`.

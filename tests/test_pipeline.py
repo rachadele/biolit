@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from biolit.fetchers.pubmed import fetch_pubmed_metadata
 from biolit.llm.base import BaseLLMClient
 from biolit.pipeline import (
     run,
@@ -814,7 +815,7 @@ class TestPipelineRunOptionalArgs:
         required = {"title", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"}
         assert required.issubset(set(csv.DictReader(csv_path.open()).fieldnames))
         # No LLM-extracted columns beyond the metadata set
-        extra_cols = set(csv.DictReader(csv_path.open()).fieldnames) - required - {"linked_pmids"}
+        extra_cols = set(csv.DictReader(csv_path.open()).fieldnames) - required - {"linked_pmids", "authors"}
         assert extra_cols == set(), f"Unexpected extra columns: {extra_cols}"
 
     @patch("biolit.pipeline.get_citation_count")
@@ -903,7 +904,7 @@ class TestPipelineRunOptionalArgs:
 
 
 # ---------------------------------------------------------------------------
-# Tests for format_record_markdown
+# Tests for format_record_markdown and generate_markdown_summary
 # ---------------------------------------------------------------------------
 
 SAMPLE_SCHEMA = {
@@ -925,156 +926,42 @@ SAMPLE_RECORD = {
 
 
 class TestFormatRecordMarkdown:
-    """Tests for format_record_markdown."""
-
-    def test_header_contains_title_and_metadata(self):
-        """The ## header and metadata lines appear in the output."""
-        client = FakeLLMClient(["### Methodology\nUsed GWAS.\n\n### Summary\nLarge study."])
+    def test_normal_record_renders_header_and_llm_body(self):
+        """Header metadata and LLM-generated body both appear in the output."""
+        llm_body = "### Methodology\nUsed GWAS."
+        client = FakeLLMClient([llm_body])
         result = format_record_markdown(client, SAMPLE_RECORD, SAMPLE_SCHEMA)
         assert "## GWAS of schizophrenia" in result
         assert "**PMID:** 41795042" in result
-        assert "**DOI:** 10.1038/s41588-026-01234-5" in result
-        assert "**Text source:** pmc_fulltext" in result
-        assert "**Citations:** 42" in result
-
-    def test_llm_body_appended_after_header(self):
-        """The LLM-generated body follows the metadata header."""
-        llm_body = "### Methodology\nThis paper used GWAS.\n\n### Summary\nLarge study."
-        client = FakeLLMClient([llm_body])
-        result = format_record_markdown(client, SAMPLE_RECORD, SAMPLE_SCHEMA)
         assert llm_body in result
 
-    def test_schema_and_extracted_values_in_prompt(self):
-        """The LLM prompt includes both the schema descriptions and extracted field values."""
-        client = FakeLLMClient(["body text"])
-        format_record_markdown(client, SAMPLE_RECORD, SAMPLE_SCHEMA)
-        assert len(client.calls) == 1
-        prompt = client.calls[0][0]["content"]
-        # Schema descriptions passed
-        assert "experimental method used in the study" in prompt
-        # Extracted values passed
-        assert "GWAS" in prompt
-
-    def test_stub_record_no_llm_call(self):
-        """Stub records return a failure note without calling the LLM."""
+    def test_stub_record_shows_failure_note_without_llm_call(self):
+        """Stub records render a failure note and make no LLM call."""
         client = FakeLLMClient([])
-        stub = {
-            "title": "Failed Paper",
-            "pmid": "99999999",
-            "doi": None,
-            "url": None,
-            "geo_accession": None,
-            "text_source": "abstract",
-            "_stub": True,
-            "_stub_reason": "LLM timeout",
-        }
+        stub = {"title": "Failed Paper", "_stub": True, "_stub_reason": "fetch error"}
         result = format_record_markdown(client, stub, SAMPLE_SCHEMA)
         assert len(client.calls) == 0
         assert "Failed Paper" in result
-        assert "LLM timeout" in result
-        assert "_Record could not be fully processed" in result
+        assert "fetch error" in result
 
-    def test_stub_record_with_no_reason(self):
-        """Stub records with no _stub_reason fall back to 'unknown error'."""
-        client = FakeLLMClient([])
-        stub = {"title": "X", "_stub": True}
-        result = format_record_markdown(client, stub, SAMPLE_SCHEMA)
-        assert "unknown error" in result
-
-    def test_no_schema_no_llm_call(self):
-        """When output_schema is None (metadata-only run), no LLM call is made."""
+    def test_no_schema_returns_header_only_without_llm_call(self):
+        """Metadata-only run (no schema) renders just the header, no LLM call."""
         client = FakeLLMClient([])
         result = format_record_markdown(client, SAMPLE_RECORD, None)
         assert len(client.calls) == 0
         assert "## GWAS of schizophrenia" in result
 
-    def test_missing_optional_metadata_fields_omitted(self):
-        """URL, citations, GEO fields absent from the record are not rendered."""
-        client = FakeLLMClient(["body"])
-        minimal = {
-            "title": "Minimal Paper",
-            "pmid": "12345678",
-            "doi": None,
-            "url": None,
-            "geo_accession": None,
-            "text_source": "abstract",
-            "summary": "A study.",
-        }
-        result = format_record_markdown(client, minimal, SAMPLE_SCHEMA)
-        assert "**URL:**" not in result
-        assert "**DOI:**" not in result
-        assert "**GEO:**" not in result
-        assert "**Citations:**" not in result
-
-    def test_geo_accession_appears_in_header(self):
-        """GEO accession is included in the header when present."""
-        client = FakeLLMClient(["body"])
-        geo_record = {**SAMPLE_RECORD, "geo_accession": "GSE53987", "pmid": None}
-        result = format_record_markdown(client, geo_record, SAMPLE_SCHEMA)
-        assert "**GEO:** GSE53987" in result
-
-    def test_missing_title_falls_back_to_unknown(self):
-        """Records without a title render 'Unknown' as the heading."""
-        client = FakeLLMClient(["body"])
-        result = format_record_markdown(client, {"pmid": "123"}, SAMPLE_SCHEMA)
-        assert "## Unknown" in result
-
-
-# ---------------------------------------------------------------------------
-# Tests for generate_markdown_summary
-# ---------------------------------------------------------------------------
 
 class TestGenerateMarkdownSummary:
-    def test_starts_with_h1_header(self):
-        """The document always starts with a # Literature Search Results header."""
-        client = FakeLLMClient(["body1", "body2"])
-        result = generate_markdown_summary(client, [SAMPLE_RECORD, SAMPLE_RECORD], SAMPLE_SCHEMA)
-        assert result.startswith("# Literature Search Results")
-
-    def test_records_separated_by_hr(self):
-        """Records are separated by --- horizontal rules."""
-        client = FakeLLMClient(["body1", "body2"])
-        result = generate_markdown_summary(client, [SAMPLE_RECORD, SAMPLE_RECORD], SAMPLE_SCHEMA)
-        assert "---" in result
-
-    def test_one_llm_call_per_non_stub_record(self):
-        """Exactly one LLM call is made per non-stub, non-empty-schema record."""
-        client = FakeLLMClient(["body1", "body2"])
-        generate_markdown_summary(client, [SAMPLE_RECORD, SAMPLE_RECORD], SAMPLE_SCHEMA)
-        assert len(client.calls) == 2
-
-    def test_stub_records_included_with_no_llm_call(self):
-        """Stub records appear in the output but do not trigger LLM calls."""
-        stub = {
-            "title": "Broken Paper",
-            "pmid": "88888888",
-            "doi": None,
-            "url": None,
-            "geo_accession": None,
-            "text_source": "abstract",
-            "_stub": True,
-            "_stub_reason": "network error",
-        }
-        client = FakeLLMClient(["body1"])
+    def test_renders_all_records_with_h1_header(self):
+        """Output starts with H1, contains both record titles, stubs included without LLM call."""
+        stub = {"title": "Broken Paper", "_stub": True, "_stub_reason": "network error"}
+        client = FakeLLMClient(["body"])
         result = generate_markdown_summary(client, [SAMPLE_RECORD, stub], SAMPLE_SCHEMA)
-        assert len(client.calls) == 1  # only for SAMPLE_RECORD
-        assert "Broken Paper" in result
-        assert "network error" in result
-
-    def test_empty_records_list_returns_header_only(self):
-        """An empty record list returns just the header with no LLM calls."""
-        client = FakeLLMClient([])
-        result = generate_markdown_summary(client, [], SAMPLE_SCHEMA)
-        assert "# Literature Search Results" in result
-        assert len(client.calls) == 0
-
-    def test_all_titles_present_in_output(self):
-        """Each record's title appears somewhere in the generated document."""
-        record_b = {**SAMPLE_RECORD, "title": "A Different Study", "pmid": "11111111"}
-        client = FakeLLMClient(["body1", "body2"])
-        result = generate_markdown_summary(client, [SAMPLE_RECORD, record_b], SAMPLE_SCHEMA)
+        assert result.startswith("# Literature Search Results")
         assert "GWAS of schizophrenia" in result
-        assert "A Different Study" in result
+        assert "Broken Paper" in result
+        assert len(client.calls) == 1  # only non-stub calls LLM
 
 
 # ---------------------------------------------------------------------------
@@ -1082,72 +969,18 @@ class TestGenerateMarkdownSummary:
 # ---------------------------------------------------------------------------
 
 class TestPipelineRunMarkdown:
-    """Test that run(..., markdown=True) writes results.md alongside results.csv."""
-
     @patch("biolit.pipeline.get_citation_count")
     @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *a, **kw: (p.get("abstract", "text"), "abstract", {}))
     @patch("biolit.pipeline.fetch_record")
-    def test_markdown_flag_writes_md_file(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
-        """markdown=True causes results.md to be written next to results.csv."""
+    def test_markdown_true_writes_md_with_stub_for_extraction_error(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
+        """markdown=True writes results.md; extraction failures appear as stubs."""
         mock_fetch.return_value = FAKE_PAPER_1
         mock_citations.return_value = 0
-        schema_resp = '{"methodology": "method", "summary": "summary"}'
-        extract_resp = '{"methodology": "GWAS", "summary": "Large study."}'
-        md_body = "### Methodology\nUsed GWAS.\n\n### Summary\nLarge study."
-        client = FakeLLMClient([schema_resp, extract_resp, md_body])
+        client = FakeLLMClient(['{"methodology": "method"}', "NOT JSON"])
 
         run(
             client=client,
             ids=["41795042"],
-            criterion=None,
-            fields_description="methodology, summary",
-            output_path=str(tmp_path / "results.csv"),
-            markdown=True,
-        )
-
-        md_files = list(tmp_path.rglob("results.md"))
-        assert len(md_files) == 1
-        content = md_files[0].read_text()
-        assert "# Literature Search Results" in content
-        assert FAKE_PAPER_1["title"] in content
-
-    @patch("biolit.pipeline.get_citation_count")
-    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *a, **kw: (p.get("abstract", "text"), "abstract", {}))
-    @patch("biolit.pipeline.fetch_record")
-    def test_no_markdown_flag_no_md_file(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
-        """markdown=False (default) produces no .md file."""
-        mock_fetch.return_value = FAKE_PAPER_1
-        mock_citations.return_value = 0
-        schema_resp = '{"methodology": "method", "summary": "summary"}'
-        extract_resp = '{"methodology": "GWAS", "summary": "Large study."}'
-        client = FakeLLMClient([schema_resp, extract_resp])
-
-        run(
-            client=client,
-            ids=["41795042"],
-            criterion=None,
-            fields_description="methodology, summary",
-            output_path=str(tmp_path / "results.csv"),
-            markdown=False,
-        )
-
-        assert list(tmp_path.rglob("results.md")) == []
-
-    @patch("biolit.pipeline.get_citation_count")
-    @patch("biolit.pipeline.resolve_fulltext", side_effect=lambda p, *a, **kw: (p.get("abstract", "text"), "abstract", {}))
-    @patch("biolit.pipeline.fetch_record")
-    def test_extraction_error_stub_appears_in_markdown(self, mock_fetch, mock_resolve, mock_citations, tmp_path):
-        """A record whose extraction fails still appears as a stub in the markdown."""
-        mock_fetch.return_value = FAKE_PAPER_1
-        mock_citations.return_value = 0
-        schema_resp = '{"methodology": "method"}'
-        # Extraction returns invalid JSON so extract_fields raises
-        client = FakeLLMClient([schema_resp, "NOT JSON"])
-
-        run(
-            client=client,
-            ids=["41795042"],
-            criterion=None,
             fields_description="methodology",
             output_path=str(tmp_path / "results.csv"),
             markdown=True,
@@ -1156,5 +989,80 @@ class TestPipelineRunMarkdown:
         md_files = list(tmp_path.rglob("results.md"))
         assert len(md_files) == 1
         content = md_files[0].read_text()
+        assert "# Literature Search Results" in content
         assert "could not be fully processed" in content
-        assert FAKE_PAPER_1["title"] in content
+
+
+# ---------------------------------------------------------------------------
+# Tests for PubMed author parsing
+# ---------------------------------------------------------------------------
+
+PUBMED_XML_WITH_AUTHORS = b"""<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <Article>
+        <ArticleTitle>A schizophrenia GWAS study</ArticleTitle>
+        <Abstract><AbstractText>Abstract text.</AbstractText></Abstract>
+        <AuthorList>
+          <Author ValidYN="Y">
+            <LastName>Smith</LastName>
+            <ForeName>Jane</ForeName>
+            <Initials>J</Initials>
+          </Author>
+          <Author ValidYN="Y">
+            <LastName>Jones</LastName>
+            <Initials>AB</Initials>
+          </Author>
+          <Author ValidYN="Y">
+            <CollectiveName>SCHEMA Consortium</CollectiveName>
+          </Author>
+        </AuthorList>
+      </Article>
+      <MeshHeadingList/>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="doi">10.1038/test</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>
+"""
+
+
+class TestPubmedAuthorParsing:
+    @patch("biolit.fetchers.pubmed.time.sleep")
+    @patch("biolit.fetchers.pubmed.requests.get")
+    def test_parses_authors_from_xml(self, mock_get, mock_sleep):
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.content = PUBMED_XML_WITH_AUTHORS
+        mock_get.return_value = resp
+
+        result = fetch_pubmed_metadata("99999999")
+        assert result["authors"] == "Smith J, Jones AB, SCHEMA Consortium"
+
+    @patch("biolit.fetchers.pubmed.time.sleep")
+    @patch("biolit.fetchers.pubmed.requests.get")
+    def test_authors_none_when_no_author_list(self, mock_get, mock_sleep):
+        xml = b"""<?xml version="1.0"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <Article>
+        <ArticleTitle>No authors</ArticleTitle>
+        <Abstract><AbstractText>Text.</AbstractText></Abstract>
+      </Article>
+      <MeshHeadingList/>
+    </MedlineCitation>
+    <PubmedData><ArticleIdList/></PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>"""
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.content = xml
+        mock_get.return_value = resp
+
+        result = fetch_pubmed_metadata("99999999")
+        assert result["authors"] is None

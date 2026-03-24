@@ -62,6 +62,22 @@ def read_pmids_file(path: str) -> list[str]:
     return pmids
 
 
+def read_ids_file(path: str) -> list[str]:
+    """Read a plain-text file of mixed identifiers (PMIDs, DOIs, GEO accessions).
+
+    One identifier per line. Blank lines and lines starting with ``#`` are
+    ignored. No format validation is performed — identifiers are passed as-is
+    to the pipeline's auto-detection logic.
+    """
+    ids = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                ids.append(line)
+    return ids
+
+
 def read_dois_from_bib(path: str) -> list[str]:
     """Extract DOIs from a BibTeX (.bib) file.
 

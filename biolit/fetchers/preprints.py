@@ -70,6 +70,7 @@ def fetch_preprint_metadata(doi: str) -> dict | None:
                 "abstract": record.get("abstract", ""),
                 "doi": doi,
                 "server": srv,
+                "authors": record.get("authors") or None,
             }
         except Exception:
             continue

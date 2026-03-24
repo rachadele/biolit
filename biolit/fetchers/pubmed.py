@@ -47,6 +47,20 @@ def fetch_pubmed_metadata(pmid: str) -> dict | None:
             doi = id_elem.text
             break
 
+    # Extract authors: "LastName Initials" or CollectiveName for consortia
+    author_parts = []
+    for author in article.findall(".//Author"):
+        collective = author.findtext("CollectiveName")
+        if collective:
+            author_parts.append(collective.strip())
+        else:
+            last = author.findtext("LastName") or ""
+            initials = author.findtext("Initials") or ""
+            name = f"{last} {initials}".strip()
+            if name:
+                author_parts.append(name)
+    authors = ", ".join(author_parts) if author_parts else None
+
     time.sleep(_RATE_DELAY)
     return {
         "pmid": pmid,
@@ -54,6 +68,7 @@ def fetch_pubmed_metadata(pmid: str) -> dict | None:
         "title": title,
         "abstract": abstract,
         "mesh_terms": mesh_terms,
+        "authors": authors,
         "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
         "fulltext_xml": None,
         "fulltext_pdf": None,

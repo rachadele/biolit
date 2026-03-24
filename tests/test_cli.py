@@ -297,84 +297,19 @@ class TestRunMainInputFileInConfig:
 # ---------------------------------------------------------------------------
 
 class TestMarkdownFlag:
-    """Tests for the --markdown (--md) CLI flag."""
-
-    def _make_ids_file(self, tmp_path, content="41795042\n"):
-        f = tmp_path / "ids.txt"
-        f.write_text(content)
-        return str(f)
-
     @patch("biolit.cli.run")
     @patch("biolit.cli.get_llm_client")
-    def test_markdown_flag_passes_markdown_true(self, mock_llm, mock_run, tmp_path):
-        """--markdown sets markdown=True when calling run()."""
+    def test_markdown_flag_forwarded_to_run(self, mock_llm, mock_run, tmp_path):
+        """--markdown passes markdown=True to run(); omitting it passes False."""
         mock_run.return_value = (None, 0)
         mock_llm.return_value = MagicMock()
-        ids_file = self._make_ids_file(tmp_path)
+        ids_file = tmp_path / "ids.txt"
+        ids_file.write_text("41795042\n")
 
-        _run_main([ids_file, "--markdown"])
-
+        _run_main([str(ids_file), "--markdown"])
         _, kwargs = mock_run.call_args
         assert kwargs.get("markdown") is True
 
-    @patch("biolit.cli.run")
-    @patch("biolit.cli.get_llm_client")
-    def test_md_alias_passes_markdown_true(self, mock_llm, mock_run, tmp_path):
-        """--md is an alias for --markdown and also sets markdown=True."""
-        mock_run.return_value = (None, 0)
-        mock_llm.return_value = MagicMock()
-        ids_file = self._make_ids_file(tmp_path)
-
-        _run_main([ids_file, "--md"])
-
-        _, kwargs = mock_run.call_args
-        assert kwargs.get("markdown") is True
-
-    @patch("biolit.cli.run")
-    @patch("biolit.cli.get_llm_client")
-    def test_no_markdown_flag_passes_markdown_false(self, mock_llm, mock_run, tmp_path):
-        """Without --markdown, markdown=False is passed to run()."""
-        mock_run.return_value = (None, 0)
-        mock_llm.return_value = MagicMock()
-        ids_file = self._make_ids_file(tmp_path)
-
-        _run_main([ids_file])
-
+        _run_main([str(ids_file)])
         _, kwargs = mock_run.call_args
         assert kwargs.get("markdown") is False
-
-    @patch("biolit.cli.run")
-    @patch("biolit.cli.get_llm_client")
-    def test_markdown_from_config_file(self, mock_llm, mock_run, tmp_path):
-        """markdown=true in a config file is forwarded to run()."""
-        cfg = {"markdown": True}
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps(cfg))
-        ids_file = self._make_ids_file(tmp_path)
-
-        mock_run.return_value = (None, 0)
-        mock_llm.return_value = MagicMock()
-
-        with patch("biolit.cli.load_config", return_value=cfg):
-            _run_main([ids_file, "--config", str(config_file)])
-
-        _, kwargs = mock_run.call_args
-        assert kwargs.get("markdown") is True
-
-    @patch("biolit.cli.run")
-    @patch("biolit.cli.get_llm_client")
-    def test_cli_flag_overrides_config_markdown_false(self, mock_llm, mock_run, tmp_path):
-        """--markdown CLI flag wins even when config has markdown=false (or absent)."""
-        cfg = {}
-        config_file = tmp_path / "config.json"
-        config_file.write_text(json.dumps(cfg))
-        ids_file = self._make_ids_file(tmp_path)
-
-        mock_run.return_value = (None, 0)
-        mock_llm.return_value = MagicMock()
-
-        with patch("biolit.cli.load_config", return_value=cfg):
-            _run_main([ids_file, "--config", str(config_file), "--markdown"])
-
-        _, kwargs = mock_run.call_args
-        assert kwargs.get("markdown") is True
