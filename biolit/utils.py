@@ -62,6 +62,25 @@ def read_pmids_file(path: str) -> list[str]:
     return pmids
 
 
+def read_dois_from_bib(path: str) -> list[str]:
+    """Extract DOIs from a BibTeX (.bib) file.
+
+    Reads the ``doi = {...}`` field from each entry. Entries without a DOI are
+    silently skipped. Duplicate DOIs (e.g. from duplicate references) are
+    deduplicated while preserving order.
+    """
+    dois: list[str] = []
+    seen: set[str] = set()
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    for match in re.finditer(r'\bdoi\s*=\s*[{"\'](.*?)[}"\']\s*[,}]', content, re.IGNORECASE):
+        doi = match.group(1).strip()
+        if doi and doi not in seen:
+            seen.add(doi)
+            dois.append(doi)
+    return dois
+
+
 def parse_json_response(text: str) -> dict:
     """Parse JSON from an LLM response.
 

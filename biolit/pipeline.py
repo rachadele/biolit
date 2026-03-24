@@ -93,6 +93,100 @@ def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text
 
 
 # ---------------------------------------------------------------------------
+# Markdown rendering
+# ---------------------------------------------------------------------------
+
+_MARKDOWN_META_KEYS = frozenset({
+    "title", "url", "pmid", "doi", "geo_accession", "text_source",
+    "citation_count", "linked_pmids", "_stub", "_stub_reason",
+})
+
+
+def format_record_markdown(
+    client: BaseLLMClient,
+    record: dict,
+    output_schema: dict | None,
+) -> str:
+    """Render a single record as a markdown section.
+
+    Stub records (``_stub=True``) get a minimal header + failure note with no
+    LLM call. Normal records get an LLM-generated prose section that is aware
+    of the full output schema (field names and descriptions) so it can adapt
+    its tone and gracefully omit null fields.
+    """
+    title = record.get("title") or "Unknown"
+    url = record.get("url", "")
+    pmid = record.get("pmid")
+    doi = record.get("doi")
+    geo = record.get("geo_accession")
+    text_source = record.get("text_source", "")
+    citations = record.get("citation_count")
+
+    # Build metadata header lines
+    meta_lines = []
+    if url:
+        meta_lines.append(f"**URL:** {url}")
+    if pmid:
+        meta_lines.append(f"**PMID:** {pmid}")
+    if doi:
+        meta_lines.append(f"**DOI:** {doi}")
+    if geo:
+        meta_lines.append(f"**GEO:** {geo}")
+    if text_source:
+        meta_lines.append(f"**Text source:** {text_source}")
+    if citations is not None:
+        meta_lines.append(f"**Citations:** {citations}")
+
+    header = f"## {title}\n" + "\n".join(meta_lines)
+
+    # Stub: no LLM call needed
+    if record.get("_stub"):
+        reason = record.get("_stub_reason", "unknown error")
+        return f"{header}\n\n_Record could not be fully processed: {reason}._\n"
+
+    # Metadata-only run (no extraction schema): no LLM call needed
+    if not output_schema:
+        return f"{header}\n"
+
+    # Full LLM render: pass schema + extracted values so the model has context
+    extracted = {k: v for k, v in record.items() if k not in _MARKDOWN_META_KEYS}
+    schema_str = json.dumps(output_schema, indent=2)
+    extracted_str = json.dumps(extracted, indent=2)
+
+    prompt = (
+        "You are writing a structured markdown summary section for an academic literature review.\n\n"
+        f"Paper metadata:\n"
+        f"  Title: {title}\n"
+        f"  PMID: {pmid}\n"
+        f"  DOI: {doi}\n"
+        f"  Text source: {text_source}\n\n"
+        f"Field schema (what each field means):\n{schema_str}\n\n"
+        f"Extracted field values:\n{extracted_str}\n\n"
+        "Write the body of the markdown section for this paper. Rules:\n"
+        "- Do NOT include the paper title or metadata (those are prepended separately)\n"
+        "- Write one ### subsection per extracted field, in clean natural prose\n"
+        "- Silently omit fields whose value is null, empty, or not applicable\n"
+        "- Do not copy values verbatim — adapt them into readable sentences\n"
+        "- Keep each subsection concise (1-3 sentences)\n"
+        "- Do not add any preamble or closing remarks"
+    )
+    body = client.chat([{"role": "user", "content": prompt}], max_tokens=1024)
+    return f"{header}\n\n{body}\n"
+
+
+def generate_markdown_summary(
+    client: BaseLLMClient,
+    records: list[dict],
+    output_schema: dict | None,
+) -> str:
+    """Render all records (including stubs) as a single markdown document."""
+    sections = ["# Literature Search Results\n"]
+    for record in records:
+        sections.append(format_record_markdown(client, record, output_schema))
+    return "\n---\n\n".join(sections)
+
+
+# ---------------------------------------------------------------------------
 # Input type detection and unified record fetching
 # ---------------------------------------------------------------------------
 
@@ -407,6 +501,7 @@ def run(
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
+    markdown: bool = False,
 ) -> tuple[str | None, int]:
     """Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and GEO accessions.
 
@@ -432,6 +527,21 @@ def run(
     print(f"Run directory: {run_dir}\n", file=sys.stderr)
 
     results = []
+    stubs: list[dict] = []  # skipped/failed records; markdown-only, not written to CSV
+
+    def _stub(reason: str, paper: dict | None = None, id_str: str = "") -> dict:
+        """Build a stub entry for the markdown from a paper dict or bare id_str."""
+        return {
+            "title": (paper.get("title") if paper else None) or id_str,
+            "url": paper.get("url") if paper else None,
+            "pmid": paper.get("pmid") if paper else None,
+            "doi": paper.get("doi") if paper else None,
+            "geo_accession": paper.get("geo_accession") if paper else None,
+            "text_source": paper.get("text_source") if paper else None,
+            "_stub": True,
+            "_stub_reason": reason,
+        }
+
     for i, id_str in enumerate(ids, 1):
         id_type = _detect_id_type(id_str)
         print(f"[{i}/{len(ids)}] {id_str}", end=" ... ", flush=True, file=sys.stderr)
@@ -440,10 +550,12 @@ def run(
             paper = fetch_record(id_str)
         except Exception as e:
             print(f"fetch error: {e}", file=sys.stderr)
+            stubs.append(_stub(f"fetch error: {e}", id_str=id_str))
             continue
 
         if not paper:
             print("skipped (not found)", file=sys.stderr)
+            stubs.append(_stub("record not found", id_str=id_str))
             continue
 
         print("resolving full text...", end=" ", flush=True, file=sys.stderr)
@@ -486,6 +598,7 @@ def run(
 
         if not text:
             print("skipped (no content)", file=sys.stderr)
+            stubs.append(_stub("no content retrievable", paper=paper))
             continue
 
         # ── Optional screening step ──────────────────────────────────────────
@@ -494,6 +607,7 @@ def run(
                 screening = screen_paper(client, paper, criterion, text)
             except Exception as e:
                 print(f"screening error: {e}", file=sys.stderr)
+                stubs.append(_stub(f"screening error: {e}", paper=paper))
                 continue
 
             if not screening.get("relevant"):
@@ -523,6 +637,7 @@ def run(
                 results.append(result)
             except Exception as e:
                 print(f"  extraction error: {e}", file=sys.stderr)
+                stubs.append(_stub(f"extraction error: {e}", paper=paper))
         else:
             print("", file=sys.stderr)
             result = {
@@ -542,6 +657,12 @@ def run(
 
     if not results:
         print("\nNo records to write.", file=sys.stderr)
+        if markdown and stubs:
+            print("Generating markdown summary (stubs only)...", file=sys.stderr)
+            md_path = csv_path.replace(".csv", ".md")
+            md_content = generate_markdown_summary(client, stubs, output_schema)
+            _write_text(md_path, md_content)
+            print(f"Wrote markdown to {md_path}", file=sys.stderr)
         return None, 0
 
     priority = ["title", "url", "pmid", "doi", "geo_accession", "text_source", "citation_count"]
@@ -554,6 +675,14 @@ def run(
         writer.writerows(results)
 
     print(f"\nWrote {len(results)} records to {csv_path}", file=sys.stderr)
+
+    if markdown:
+        print("Generating markdown summary...", file=sys.stderr)
+        md_path = csv_path.replace(".csv", ".md")
+        md_content = generate_markdown_summary(client, results + stubs, output_schema)
+        _write_text(md_path, md_content)
+        print(f"Wrote markdown to {md_path}", file=sys.stderr)
+
     return csv_path, len(results)
 
 

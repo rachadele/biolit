@@ -12,6 +12,7 @@ VALID_KEYS = {
     "max_chars",
     "unpaywall_email",
     "output",
+    "markdown",
 }
 
 

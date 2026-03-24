@@ -262,6 +262,7 @@ def run_pipeline(
     output_path: str = "",
     unpaywall_email: str = "",
     config_path: str = "",
+    markdown: bool = False,
 ) -> dict:
     """Run the fetch → (screen) → (extract) pipeline on a mixed list of identifiers and write a CSV.
 
@@ -287,7 +288,8 @@ def run_pipeline(
         unpaywall_email: Email for the Unpaywall API.
             Falls back to config_path value, then UNPAYWALL_EMAIL env var.
         config_path: Path to a JSON config file. Supported keys: ids, criterion, fields,
-            output, unpaywall_email. Explicit arguments take precedence.
+            output, unpaywall_email, markdown. Explicit arguments take precedence.
+        markdown: If True, also write a results.md markdown summary alongside the CSV.
 
     Returns:
         {"output_path": "..." | null, "relevant_count": N}
@@ -309,6 +311,7 @@ def run_pipeline(
     resolved_output = output_path or config.get("output") or "results.csv"
     resolved_email = unpaywall_email or config.get("unpaywall_email") or os.environ.get("UNPAYWALL_EMAIL")
 
+    resolved_markdown = markdown or bool(config.get("markdown"))
     id_list = [x.strip() for x in resolved_ids.split(",") if x.strip()]
     csv_path, relevant_count = _run(
         client=_llm,
@@ -317,6 +320,7 @@ def run_pipeline(
         fields_description=resolved_fields,
         output_path=resolved_output,
         unpaywall_email=resolved_email,
+        markdown=resolved_markdown,
     )
     return {"output_path": csv_path, "relevant_count": relevant_count}
 
