@@ -2,6 +2,18 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.20] — 2026-03-24
+
+### Added
+- **Markdown export** (`--markdown` / `--md` CLI flag; `"markdown": true` in config; `markdown=True` in `run()` and `run_pipeline` MCP tool) — writes a `results.md` prose summary alongside the CSV. Each record gets an LLM-rendered section with `### field` subsections. Records that failed or were skipped appear as stub entries with a failure note, with no extra LLM call.
+- **BibTeX input support** — `.bib` files are now accepted as positional input to the CLI. DOIs are extracted from `doi = {...}` fields via `read_dois_from_bib()` in `biolit/utils.py`; entries without a DOI are silently skipped.
+- **Stub entries for all skip points** — records that fail at fetch, not-found, no-content, screening error, or extraction error stages all produce stub markdown entries. Previously only extraction errors produced stubs. "Not relevant" (screening returned false) remains intentionally silent.
+- **`format_record_markdown(client, record, output_schema)`** and **`generate_markdown_summary(client, records, output_schema)`** — new public functions in `biolit/pipeline.py` for rendering markdown from extracted records and stubs.
+- **`markdown` config key** — added to `VALID_KEYS` in `biolit/config.py`.
+
+### Changed
+- **`DEFAULT_MAX_CHARS` increased to 50,000** — raised from 12,000 to 50,000 characters (~12,500 tokens) to improve full-text extraction quality by default.
+
 ## [0.1.19] — 2026-03-18
 
 ### Changed

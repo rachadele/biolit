@@ -11,7 +11,7 @@ from biolit.fetchers.pubmed import doi_to_pmid
 from biolit.llm import get_llm_client
 from biolit.pipeline import run, screen_by_pmid, screen_by_geo, screen_by_doi
 from biolit.parsers.utils import DEFAULT_MAX_CHARS
-from biolit.utils import read_eml_body, extract_pmids, read_pmids_file
+from biolit.utils import read_eml_body, extract_pmids, read_pmids_file, read_dois_from_bib
 
 load_dotenv()
 
@@ -166,6 +166,8 @@ def _run_main(argv: list[str] | None = None) -> None:
                              "CLI flags take precedence over config values.")
     parser.add_argument("--output", default=None,
                         help="Output CSV path (default: results.csv)")
+    parser.add_argument("--markdown", "--md", action="store_true", default=False,
+                        help="Also write a results.md markdown summary alongside the CSV")
 
     # LLM provider
     parser.add_argument(
@@ -231,6 +233,7 @@ def _run_main(argv: list[str] | None = None) -> None:
     sections_str = args.sections or config.get("sections")
     max_chars = args.max_chars or config.get("max_chars") or DEFAULT_MAX_CHARS
     output = args.output or config.get("output") or "results.csv"
+    use_markdown = args.markdown or bool(config.get("markdown"))
 
     # Build LLM client
     try:
@@ -263,6 +266,9 @@ def _run_main(argv: list[str] | None = None) -> None:
         body = read_eml_body(input_file)
         ids = extract_pmids(body)
         print(f"Found {len(ids)} PMIDs in {input_file}\n")
+    elif input_file and input_file.endswith(".bib"):
+        ids = read_dois_from_bib(input_file)
+        print(f"Found {len(ids)} DOIs in {input_file}\n")
     else:
         ids = _read_ids_file(input_file)
         print(f"Read {len(ids)} identifiers from {input_file}\n")
@@ -285,6 +291,7 @@ def _run_main(argv: list[str] | None = None) -> None:
         unpaywall_email=unpaywall_email,
         sections_wanted=sections_wanted,
         max_chars=max_chars,
+        markdown=use_markdown,
     )
 
 

@@ -32,6 +32,7 @@ The tool accepts a PubMed alert email (`.eml`) or a plain-text file of identifie
 | Input | How to pass | Example |
 |---|---|---|
 | PubMed alert email | positional `.eml` file | `alert.eml` |
+| BibTeX file | positional `.bib` file | `refs.bib` |
 | Identifier file (mixed) | positional plain-text file, one per line | `identifiers.txt` |
 | Inline identifiers | `--ids` flag, comma-separated | `--ids 41795042,GSE53987,10.1101/2025.03.17.25324098` |
 
@@ -53,11 +54,18 @@ biolit identifiers.txt \
   --fields "methodology, sample_size, treatment, outcomes"
 ```
 
-Or use a JSON config file to store reusable parameters (CLI flags take precedence). The config can include `ids` or `input_file` (path to an `.eml` or identifier list), so no positional argument or `--ids` flag is needed:
+Add `--markdown` (or `--md`) to also write a prose `.md` summary alongside the CSV. Each record gets a markdown section with `### field` subsections; records that failed or were skipped appear as stub entries:
+
+```bash
+biolit refs.bib --config my_config.json --markdown
+```
+
+Or use a JSON config file to store reusable parameters (CLI flags take precedence). The config can include `ids` or `input_file` (path to an `.eml`, `.bib`, or identifier list), and `"markdown": true` to enable markdown output:
 
 ```bash
 biolit alert.eml --config my_config.json
-biolit --config my_config.json   # ids or input_file supplied by config
+biolit refs.bib --config my_config.json   # DOIs extracted from .bib automatically
+biolit --config my_config.json            # ids or input_file supplied by config
 ```
 
 The `fields` key in a config file can be a comma-separated string or a JSON object mapping field names to extraction descriptions. When a string is used, an extra LLM call converts the field names into descriptions before extraction. When a dict is used, that call is skipped — the descriptions are passed directly to the model:
@@ -155,7 +163,10 @@ You can also set `LLM_PROVIDER` and `LLM_MODEL` as environment variables.
 Each run creates a timestamped directory (e.g. `run_20260313_142000/`) containing:
 
 - `results.csv` — one row per relevant record
+- `results.md` — prose markdown summary (written when `--markdown` or `"markdown": true` in config)
 - `artifacts/<id>/` — per-record folder with the text sent to the LLM, metadata, and any retrieved full-text files
+
+Records that fail at any pipeline stage (fetch error, not found, no content, screening or extraction error) are excluded from the CSV but appear in the markdown as stub entries with a failure note.
 
 With default fields, the CSV columns are:
 
@@ -229,7 +240,7 @@ Add a `.mcp.json` in your project root:
 
 | Tool | Description |
 |---|---|
-| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV. All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
+| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
 
 **Low-level** (for custom workflows):
 
@@ -258,9 +269,11 @@ client = get_llm_client("anthropic")
 
 # Batch pipeline — PMIDs, DOIs, and GEO accessions can be mixed freely
 # criterion and fields_description are optional; omit either to skip that step
+# markdown=True writes results.md alongside the CSV
 # Returns (csv_path, record_count)
 csv_path, count = run(client, ids=["41627908", "GSE53987", "10.1101/2025.03.17.25324098"],
-    criterion="...", fields_description="methodology, summary", output_path="results.csv")
+    criterion="...", fields_description="methodology, summary", output_path="results.csv",
+    markdown=True)
 
 # Fetch + write metadata only (no LLM calls)
 csv_path, count = run(client, ids=["41627908", "GSE53987"])

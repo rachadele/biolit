@@ -94,7 +94,7 @@ class TestLoadConfig:
         """VALID_KEYS contains exactly the documented supported keys."""
         expected = {
             "ids", "input_file", "criterion", "fields", "provider", "model",
-            "sections", "max_chars", "unpaywall_email", "output",
+            "sections", "max_chars", "unpaywall_email", "output", "markdown",
         }
         assert VALID_KEYS == expected
 
