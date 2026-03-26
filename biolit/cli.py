@@ -204,6 +204,10 @@ def _run_main(argv: list[str] | None = None) -> None:
         "--max-chars", type=int, default=None,
         help=f"Maximum characters of paper text sent to the LLM (default: {DEFAULT_MAX_CHARS})",
     )
+    parser.add_argument(
+        "--markdown-max-tokens", type=int, default=None,
+        help="Maximum tokens for each markdown section LLM call (default: 1024)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -234,6 +238,7 @@ def _run_main(argv: list[str] | None = None) -> None:
     max_chars = args.max_chars or config.get("max_chars") or DEFAULT_MAX_CHARS
     output = args.output or config.get("output") or "results.csv"
     use_markdown = args.markdown or bool(config.get("markdown"))
+    markdown_max_tokens = args.markdown_max_tokens or config.get("markdown_max_tokens") or 1024
 
     # Build LLM client
     try:
@@ -292,6 +297,7 @@ def _run_main(argv: list[str] | None = None) -> None:
         sections_wanted=sections_wanted,
         max_chars=max_chars,
         markdown=use_markdown,
+        markdown_max_tokens=markdown_max_tokens,
     )
 
 

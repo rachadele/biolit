@@ -263,6 +263,7 @@ def run_pipeline(
     unpaywall_email: str = "",
     config_path: str = "",
     markdown: bool = False,
+    markdown_max_tokens: int = 0,
     bib_path: str = "",
     ids_file: str = "",
 ) -> dict:
@@ -290,8 +291,10 @@ def run_pipeline(
         unpaywall_email: Email for the Unpaywall API.
             Falls back to config_path value, then UNPAYWALL_EMAIL env var.
         config_path: Path to a JSON config file. Supported keys: ids, criterion, fields,
-            output, unpaywall_email, markdown. Explicit arguments take precedence.
+            output, unpaywall_email, markdown, markdown_max_tokens. Explicit arguments take precedence.
         markdown: If True, also write a results.md markdown summary alongside the CSV.
+        markdown_max_tokens: Maximum tokens for each markdown section LLM call (default: 1024).
+            Pass 0 to use the default.
         bib_path: Path to a BibTeX (.bib) file. DOIs are extracted from doi={...} fields.
             Used when ids is empty. Takes precedence over ids_file.
         ids_file: Path to a plain-text file of identifiers (one per line, mixed types OK).
@@ -335,6 +338,7 @@ def run_pipeline(
     resolved_output = output_path or config.get("output") or "results.csv"
     resolved_email = unpaywall_email or config.get("unpaywall_email") or os.environ.get("UNPAYWALL_EMAIL")
     resolved_markdown = markdown or bool(config.get("markdown"))
+    resolved_markdown_max_tokens = markdown_max_tokens or config.get("markdown_max_tokens") or 1024
     csv_path, relevant_count = _run(
         client=_llm,
         ids=id_list,
@@ -343,6 +347,7 @@ def run_pipeline(
         output_path=resolved_output,
         unpaywall_email=resolved_email,
         markdown=resolved_markdown,
+        markdown_max_tokens=resolved_markdown_max_tokens,
     )
     return {"output_path": csv_path, "relevant_count": relevant_count}
 

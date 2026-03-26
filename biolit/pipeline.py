@@ -107,6 +107,7 @@ def format_record_markdown(
     client: BaseLLMClient,
     record: dict,
     output_schema: dict | None,
+    markdown_max_tokens: int = 1024,
 ) -> str:
     """Render a single record as a markdown section.
 
@@ -175,7 +176,7 @@ def format_record_markdown(
         "- Keep each subsection concise (1-3 sentences)\n"
         "- Do not add any preamble or closing remarks"
     )
-    body = client.chat([{"role": "user", "content": prompt}], max_tokens=1024)
+    body = client.chat([{"role": "user", "content": prompt}], max_tokens=markdown_max_tokens)
     return f"{header}\n\n{body}\n"
 
 
@@ -183,11 +184,12 @@ def generate_markdown_summary(
     client: BaseLLMClient,
     records: list[dict],
     output_schema: dict | None,
+    markdown_max_tokens: int = 1024,
 ) -> str:
     """Render all records (including stubs) as a single markdown document."""
     sections = ["# Literature Search Results\n"]
     for record in records:
-        sections.append(format_record_markdown(client, record, output_schema))
+        sections.append(format_record_markdown(client, record, output_schema, markdown_max_tokens))
     return "\n---\n\n".join(sections)
 
 
@@ -512,6 +514,7 @@ def run(
     sections_wanted: list[str] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
     markdown: bool = False,
+    markdown_max_tokens: int = 1024,
 ) -> tuple[str | None, int]:
     """Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and GEO accessions.
 
@@ -671,7 +674,7 @@ def run(
         if markdown and stubs:
             print("Generating markdown summary (stubs only)...", file=sys.stderr)
             md_path = csv_path.replace(".csv", ".md")
-            md_content = generate_markdown_summary(client, stubs, output_schema)
+            md_content = generate_markdown_summary(client, stubs, output_schema, markdown_max_tokens)
             _write_text(md_path, md_content)
             print(f"Wrote markdown to {md_path}", file=sys.stderr)
         return None, 0
@@ -690,7 +693,7 @@ def run(
     if markdown:
         print("Generating markdown summary...", file=sys.stderr)
         md_path = csv_path.replace(".csv", ".md")
-        md_content = generate_markdown_summary(client, results + stubs, output_schema)
+        md_content = generate_markdown_summary(client, results + stubs, output_schema, markdown_max_tokens)
         _write_text(md_path, md_content)
         print(f"Wrote markdown to {md_path}", file=sys.stderr)
 

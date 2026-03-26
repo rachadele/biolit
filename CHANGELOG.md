@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.22] — 2026-03-24
+
+### Added
+- **`markdown_max_tokens` parameter** — controls the token budget for each per-record LLM call during markdown rendering. Configurable via `--markdown-max-tokens` CLI flag, `"markdown_max_tokens"` config file key, `markdown_max_tokens` arg on `run()`, and `markdown_max_tokens` arg on the MCP `run_pipeline` tool. Default remains 1024.
+
 ## [0.1.21] — 2026-03-24
 
 ### Added

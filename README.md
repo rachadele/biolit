@@ -58,6 +58,7 @@ Add `--markdown` (or `--md`) to also write a prose `.md` summary alongside the C
 
 ```bash
 biolit refs.bib --config my_config.json --markdown
+biolit refs.bib --config my_config.json --markdown --markdown-max-tokens 2048
 ```
 
 Or use a JSON config file to store reusable parameters (CLI flags take precedence). The config can include `ids` or `input_file` (path to an `.eml`, `.bib`, or identifier list), and `"markdown": true` to enable markdown output:
@@ -241,7 +242,7 @@ Add a `.mcp.json` in your project root:
 
 | Tool | Description |
 |---|---|
-| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
+| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). Use `markdown_max_tokens` to control the token budget for each markdown section (default 1024). All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
 
 **Low-level** (for custom workflows):
 
