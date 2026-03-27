@@ -16,7 +16,7 @@ class TestLoadConfig:
             "provider": "anthropic",
             "model": "claude-haiku-4-5-20251001",
             "sections": "methods,results",
-            "max_chars": 50000,
+            "max_tokens": 12500,
             "unpaywall_email": "test@example.com",
             "output": "out.csv",
         }
@@ -94,7 +94,8 @@ class TestLoadConfig:
         """VALID_KEYS contains exactly the documented supported keys."""
         expected = {
             "ids", "input_file", "criterion", "fields", "provider", "model",
-            "sections", "max_chars", "unpaywall_email", "output", "markdown",
+            "sections", "max_tokens", "unpaywall_email", "output", "markdown",
+            "markdown_max_tokens", "extraction_max_tokens",
         }
         assert VALID_KEYS == expected
 

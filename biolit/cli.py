@@ -10,7 +10,7 @@ from biolit.config import load_config
 from biolit.fetchers.pubmed import doi_to_pmid
 from biolit.llm import get_llm_client
 from biolit.pipeline import run, screen_by_pmid, screen_by_geo, screen_by_doi
-from biolit.parsers.utils import DEFAULT_MAX_CHARS
+from biolit.parsers.utils import DEFAULT_MAX_TOKENS
 from biolit.utils import read_eml_body, extract_pmids, read_pmids_file, read_dois_from_bib
 
 load_dotenv()
@@ -162,7 +162,7 @@ def _run_main(argv: list[str] | None = None) -> None:
                         help="Use default schizophrenia genomics criterion and fields")
     parser.add_argument("--config", default=None, metavar="FILE",
                         help="JSON config file. Keys: criterion, fields, provider, model, "
-                             "sections, max_chars, unpaywall_email, output. "
+                             "sections, max_tokens, unpaywall_email, output. "
                              "CLI flags take precedence over config values.")
     parser.add_argument("--output", default=None,
                         help="Output CSV path (default: results.csv)")
@@ -201,12 +201,16 @@ def _run_main(argv: list[str] | None = None) -> None:
         ),
     )
     parser.add_argument(
-        "--max-chars", type=int, default=None,
-        help=f"Maximum characters of paper text sent to the LLM (default: {DEFAULT_MAX_CHARS})",
+        "--max-tokens", type=int, default=None,
+        help=f"Maximum tokens of paper text sent to the LLM (default: {DEFAULT_MAX_TOKENS})",
     )
     parser.add_argument(
         "--markdown-max-tokens", type=int, default=None,
         help="Maximum tokens for each markdown section LLM call (default: 1024)",
+    )
+    parser.add_argument(
+        "--extraction-max-tokens", type=int, default=None,
+        help="Maximum tokens for each field extraction LLM call (default: 4096)",
     )
 
     args = parser.parse_args(argv)
@@ -235,10 +239,11 @@ def _run_main(argv: list[str] | None = None) -> None:
     model = args.model or config.get("model") or os.environ.get("LLM_MODEL")
     unpaywall_email = args.unpaywall_email or config.get("unpaywall_email") or os.environ.get("UNPAYWALL_EMAIL")
     sections_str = args.sections or config.get("sections")
-    max_chars = args.max_chars or config.get("max_chars") or DEFAULT_MAX_CHARS
+    max_tokens = args.max_tokens or config.get("max_tokens") or DEFAULT_MAX_TOKENS
     output = args.output or config.get("output") or "results.csv"
     use_markdown = args.markdown or bool(config.get("markdown"))
     markdown_max_tokens = args.markdown_max_tokens or config.get("markdown_max_tokens") or 1024
+    extraction_max_tokens = args.extraction_max_tokens or config.get("extraction_max_tokens") or 4096
 
     # Build LLM client
     try:
@@ -295,9 +300,10 @@ def _run_main(argv: list[str] | None = None) -> None:
         output_path=output,
         unpaywall_email=unpaywall_email,
         sections_wanted=sections_wanted,
-        max_chars=max_chars,
+        max_tokens=max_tokens,
         markdown=use_markdown,
         markdown_max_tokens=markdown_max_tokens,
+        extraction_max_tokens=extraction_max_tokens,
     )
 
 

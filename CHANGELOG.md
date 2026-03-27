@@ -2,10 +2,14 @@
 
 All notable changes to `biolit` are documented here.
 
-## [0.1.22] — 2026-03-24
+## [0.1.22] — 2026-03-26
 
 ### Added
 - **`markdown_max_tokens` parameter** — controls the token budget for each per-record LLM call during markdown rendering. Configurable via `--markdown-max-tokens` CLI flag, `"markdown_max_tokens"` config file key, `markdown_max_tokens` arg on `run()`, and `markdown_max_tokens` arg on the MCP `run_pipeline` tool. Default remains 1024.
+- **`extraction_max_tokens` parameter** — configurable output token budget for the field extraction LLM call (default 4096, up from the previous hardcoded 1024). Fixes JSON truncation errors on papers with verbose multi-field schemas. Configurable via `--extraction-max-tokens` CLI flag, `"extraction_max_tokens"` config file key, `extraction_max_tokens` arg on `run()`, and `extraction_max_tokens` arg on the MCP `run_pipeline` tool.
+
+### Changed
+- **`max_chars` → `max_tokens`** — the input text truncation parameter is now expressed in tokens (default 12,500) instead of characters (was 50,000). The effective limit is unchanged (~4 chars/token). CLI flag renamed to `--max-tokens`; config file key renamed to `"max_tokens"`.
 
 ## [0.1.21] — 2026-03-24
 

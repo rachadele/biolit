@@ -9,11 +9,12 @@ VALID_KEYS = {
     "provider",
     "model",
     "sections",
-    "max_chars",
+    "max_tokens",
     "unpaywall_email",
     "output",
     "markdown",
     "markdown_max_tokens",
+    "extraction_max_tokens",
 }
 
 
@@ -21,7 +22,7 @@ def load_config(path: str) -> dict:
     """Load a JSON config file and return the settings dict.
 
     Recognised keys: ids, input_file, criterion, fields, provider, model,
-    sections, max_chars, unpaywall_email, output.
+    sections, max_tokens, unpaywall_email, output.
 
     ``fields`` may be a comma-separated string (field names only) or a JSON
     object mapping field names to extraction descriptions:

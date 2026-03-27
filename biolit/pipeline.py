@@ -14,7 +14,7 @@ from biolit.fetchers.semantic_scholar import fetch_s2_pdf, get_citation_count
 from biolit.llm.base import BaseLLMClient
 from biolit.parsers.jats import parse_jats_sections
 from biolit.parsers.pdf import parse_pdf_sections
-from biolit.parsers.utils import select_sections, DEFAULT_MAX_CHARS
+from biolit.parsers.utils import select_sections, DEFAULT_MAX_TOKENS
 from biolit.utils import parse_json_response
 
 
@@ -65,7 +65,7 @@ def screen_paper(client: BaseLLMClient, paper: dict, criterion: str, text: str) 
     return parse_json_response(response)
 
 
-def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text: str) -> dict:
+def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text: str, extraction_max_tokens: int = 4096) -> dict:
     """Extract structured fields from *paper* using the LLM."""
     schema_str = json.dumps(output_schema, indent=2)
     prompt = (
@@ -80,7 +80,7 @@ def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text
     )
     response = client.chat(
         [{"role": "user", "content": prompt}],
-        max_tokens=1024,
+        max_tokens=extraction_max_tokens,
     )
     result = parse_json_response(response)
     result["title"] = paper["title"]
@@ -263,7 +263,7 @@ def resolve_fulltext(
     paper: dict,
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
-    max_chars: int = DEFAULT_MAX_CHARS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> tuple[str, str, dict]:
     """Attempt to fetch full text for *paper*, returning (text, source_label, artifacts).
 
@@ -288,7 +288,7 @@ def resolve_fulltext(
             artifacts["pmc_xml"] = xml_bytes
             secs = parse_jats_sections(xml_bytes)
             if secs:
-                return select_sections(secs, sections_wanted, max_chars), "pmc_fulltext", artifacts
+                return select_sections(secs, sections_wanted, max_tokens), "pmc_fulltext", artifacts
 
     # 2. Europe PMC MED/{pmid} — broader open-access coverage beyond NCBI PMC
     xml_bytes = fetch_europepmc_fulltext(pmid=pmid, doi=doi)
@@ -296,7 +296,7 @@ def resolve_fulltext(
         artifacts["europepmc_xml"] = xml_bytes
         secs = parse_jats_sections(xml_bytes)
         if secs:
-            return select_sections(secs, sections_wanted, max_chars), "europepmc_fulltext", artifacts
+            return select_sections(secs, sections_wanted, max_tokens), "europepmc_fulltext", artifacts
 
     # 3. Preprints
     if doi:
@@ -305,7 +305,7 @@ def resolve_fulltext(
             artifacts["preprint_xml"] = xml_bytes
             secs = parse_jats_sections(xml_bytes)
             if secs:
-                return select_sections(secs, sections_wanted, max_chars), "preprint_fulltext", artifacts
+                return select_sections(secs, sections_wanted, max_tokens), "preprint_fulltext", artifacts
 
     # 4. Unpaywall PDF
     if doi and unpaywall_email:
@@ -315,7 +315,7 @@ def resolve_fulltext(
             try:
                 secs = parse_pdf_sections(pdf_bytes)
                 if secs:
-                    return select_sections(secs, sections_wanted, max_chars), "unpaywall_pdf", artifacts
+                    return select_sections(secs, sections_wanted, max_tokens), "unpaywall_pdf", artifacts
             except ImportError:
                 print("  [warning] pdfminer.six not installed; skipping PDF parsing", file=sys.stderr)
 
@@ -327,7 +327,7 @@ def resolve_fulltext(
             try:
                 secs = parse_pdf_sections(pdf_bytes)
                 if secs:
-                    return select_sections(secs, sections_wanted, max_chars), "s2_pdf", artifacts
+                    return select_sections(secs, sections_wanted, max_tokens), "s2_pdf", artifacts
             except ImportError:
                 print("  [warning] pdfminer.six not installed; skipping PDF parsing", file=sys.stderr)
 
@@ -375,7 +375,7 @@ def screen_by_doi(
     if xml_bytes:
         secs = parse_jats_sections(xml_bytes)
         if secs:
-            text = select_sections(secs, None, DEFAULT_MAX_CHARS)
+            text = select_sections(secs, None, DEFAULT_MAX_TOKENS)
             source = "preprint_fulltext"
 
     if not text:
@@ -383,7 +383,7 @@ def screen_by_doi(
         if xml_bytes:
             secs = parse_jats_sections(xml_bytes)
             if secs:
-                text = select_sections(secs, None, DEFAULT_MAX_CHARS)
+                text = select_sections(secs, None, DEFAULT_MAX_TOKENS)
                 source = "europepmc_fulltext"
 
     if not text and unpaywall_email:
@@ -392,7 +392,7 @@ def screen_by_doi(
             try:
                 secs = parse_pdf_sections(pdf_bytes)
                 if secs:
-                    text = select_sections(secs, None, DEFAULT_MAX_CHARS)
+                    text = select_sections(secs, None, DEFAULT_MAX_TOKENS)
                     source = "unpaywall_pdf"
             except ImportError:
                 pass
@@ -403,7 +403,7 @@ def screen_by_doi(
             try:
                 secs = parse_pdf_sections(pdf_bytes)
                 if secs:
-                    text = select_sections(secs, None, DEFAULT_MAX_CHARS)
+                    text = select_sections(secs, None, DEFAULT_MAX_TOKENS)
                     source = "s2_pdf"
             except ImportError:
                 pass
@@ -451,7 +451,7 @@ def _resolve_geo_fulltext(
     paper: dict,
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
-    max_chars: int = DEFAULT_MAX_CHARS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> tuple[str, str, dict]:
     """Attempt to fetch full text via linked PMIDs for a GEO record.
 
@@ -483,7 +483,7 @@ def _resolve_geo_fulltext(
             paper["authors"] = linked_paper["authors"]
 
         text, source, artifacts = resolve_fulltext(
-            linked_paper, unpaywall_email, sections_wanted, max_chars
+            linked_paper, unpaywall_email, sections_wanted, max_tokens
         )
         if source != "abstract":
             return f"{geo_prefix}{text}", "geo_linked_fulltext", artifacts
@@ -495,8 +495,8 @@ def _resolve_geo_fulltext(
         return f"{geo_prefix}{first_linked_abstract}", "geo_linked_abstract", first_linked_artifacts
 
     geo_text = paper.get("abstract", "")
-    if len(geo_text) > max_chars:
-        geo_text = geo_text[:max_chars]
+    if len(geo_text) > max_tokens * 4:
+        geo_text = geo_text[:max_tokens * 4]
     return geo_metadata or geo_text, "geo_record", {}
 
 
@@ -512,9 +512,10 @@ def run(
     output_path: str = "results.csv",
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
-    max_chars: int = DEFAULT_MAX_CHARS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
     markdown: bool = False,
     markdown_max_tokens: int = 1024,
+    extraction_max_tokens: int = 4096,
 ) -> tuple[str | None, int]:
     """Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and GEO accessions.
 
@@ -574,11 +575,11 @@ def run(
         print("resolving full text...", end=" ", flush=True, file=sys.stderr)
         if id_type == "geo":
             text, source, fulltext_artifacts = _resolve_geo_fulltext(
-                paper, unpaywall_email, sections_wanted, max_chars
+                paper, unpaywall_email, sections_wanted, max_tokens
             )
         else:
             text, source, fulltext_artifacts = resolve_fulltext(
-                paper, unpaywall_email, sections_wanted, max_chars
+                paper, unpaywall_email, sections_wanted, max_tokens
             )
         paper["text_source"] = source
 
@@ -641,7 +642,7 @@ def run(
         if output_schema:
             print(" — extracting fields", file=sys.stderr)
             try:
-                result = extract_fields(client, paper, output_schema, text)
+                result = extract_fields(client, paper, output_schema, text, extraction_max_tokens)
                 result["citation_count"] = get_citation_count(
                     doi=paper.get("doi"), pmid=lookup_pmid
                 )

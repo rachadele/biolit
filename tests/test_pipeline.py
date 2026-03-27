@@ -729,14 +729,14 @@ class TestResolveGeoFulltext:
 
     @patch("biolit.pipeline.resolve_fulltext")
     @patch("biolit.pipeline.fetch_pubmed_metadata")
-    def test_geo_record_text_truncated_to_max_chars(self, mock_fetch_pm, mock_resolve):
+    def test_geo_record_text_truncated_to_max_tokens(self, mock_fetch_pm, mock_resolve):
         mock_fetch_pm.return_value = None
         paper = {**GEO_PAPER_NO_PMIDS, "abstract": "x" * 200, "geo_metadata_text": ""}
 
-        text, source, _ = _resolve_geo_fulltext(paper, max_chars=50)
+        text, source, _ = _resolve_geo_fulltext(paper, max_tokens=13)  # 13 * 4 = 52 chars
 
         assert "x" * 50 in text
-        assert "x" * 51 not in text
+        assert "x" * 53 not in text
         assert source == "geo_record"
 
     def test_geo_metadata_prepended_when_present(self):

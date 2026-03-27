@@ -1,17 +1,18 @@
 """Shared parser utilities."""
 
-DEFAULT_MAX_CHARS = 50_000  # ~12 500 tokens
+DEFAULT_MAX_TOKENS = 12_500  # ~50 000 chars at ~4 chars/token
 
 
 def select_sections(
     sections: dict[str, str],
     wanted: list[str] | None = None,
-    max_chars: int = DEFAULT_MAX_CHARS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> str:
-    """Concatenate *wanted* sections from *sections* up to *max_chars*.
+    """Concatenate *wanted* sections from *sections* up to *max_tokens*.
 
     If *wanted* is None or empty, all sections are included.
     Sections are joined with a labelled header line for readability.
+    Token count is approximated as len(text) // 4.
     """
     if not sections:
         return ""
@@ -29,6 +30,7 @@ def select_sections(
     else:
         chosen = sections
 
+    max_chars = max_tokens * 4
     parts = []
     total = 0
     for key, text in chosen.items():
@@ -43,4 +45,3 @@ def select_sections(
         total += len(chunk)
 
     return "\n".join(parts)
-

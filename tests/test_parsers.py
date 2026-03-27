@@ -56,9 +56,9 @@ class TestSelectSections:
         # No methods section exists; should include everything
         assert "Full text here." in out
 
-    def test_truncates_to_max_chars(self):
+    def test_truncates_to_max_tokens(self):
         secs = {"body": "x" * 5000}
-        out = select_sections(secs, max_chars=100)
+        out = select_sections(secs, max_tokens=25)  # 25 tokens * 4 = 100 chars
         assert len(out) <= 200  # header + truncation marker add a little overhead
         assert "truncated" in out
 
