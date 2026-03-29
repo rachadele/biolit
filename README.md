@@ -242,7 +242,7 @@ Add a `.mcp.json` in your project root:
 
 | Tool | Description |
 |---|---|
-| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). Use `markdown_max_tokens` to control the token budget for each markdown section (default 1024) and `extraction_max_tokens` for field extraction (default 4096). All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
+| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). Use `max_tokens` to cap input text (default 12500), `extraction_max_tokens` for field extraction output (default 4096), and `markdown_max_tokens` for markdown rendering (default 1024). Pass `0` for any token param to use the default. All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
 
 **Low-level** (for custom workflows):
 

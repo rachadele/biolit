@@ -27,6 +27,7 @@ from biolit.fetchers.geo import fetch_geo_record as _fetch_geo_record
 from biolit.fetchers.pubmed import fetch_pubmed_metadata as _fetch_pubmed_metadata, doi_to_pmid, doi_to_pmcid
 from biolit.fetchers.semantic_scholar import get_s2_pdf_url
 from biolit.llm import get_llm_client
+from biolit.parsers.utils import DEFAULT_MAX_TOKENS
 from biolit.pipeline import (
     build_output_schema,
     extract_fields as _extract_fields,
@@ -265,6 +266,7 @@ def run_pipeline(
     markdown: bool = False,
     markdown_max_tokens: int = 0,
     extraction_max_tokens: int = 0,
+    max_tokens: int = 0,
     bib_path: str = "",
     ids_file: str = "",
 ) -> dict:
@@ -292,11 +294,13 @@ def run_pipeline(
         unpaywall_email: Email for the Unpaywall API.
             Falls back to config_path value, then UNPAYWALL_EMAIL env var.
         config_path: Path to a JSON config file. Supported keys: ids, criterion, fields,
-            output, unpaywall_email, markdown, markdown_max_tokens, extraction_max_tokens. Explicit arguments take precedence.
+            output, unpaywall_email, markdown, markdown_max_tokens, extraction_max_tokens, max_tokens. Explicit arguments take precedence.
         markdown: If True, also write a results.md markdown summary alongside the CSV.
         markdown_max_tokens: Maximum tokens for each markdown section LLM call (default: 1024).
             Pass 0 to use the default.
         extraction_max_tokens: Maximum tokens for each field extraction LLM call (default: 4096).
+            Pass 0 to use the default.
+        max_tokens: Maximum tokens of paper text sent to the LLM (default: 12500).
             Pass 0 to use the default.
         bib_path: Path to a BibTeX (.bib) file. DOIs are extracted from doi={...} fields.
             Used when ids is empty. Takes precedence over ids_file.
@@ -343,6 +347,7 @@ def run_pipeline(
     resolved_markdown = markdown or bool(config.get("markdown"))
     resolved_markdown_max_tokens = markdown_max_tokens or config.get("markdown_max_tokens") or 1024
     resolved_extraction_max_tokens = extraction_max_tokens or config.get("extraction_max_tokens") or 4096
+    resolved_max_tokens = max_tokens or config.get("max_tokens") or DEFAULT_MAX_TOKENS
     csv_path, relevant_count = _run(
         client=_llm,
         ids=id_list,
@@ -353,6 +358,7 @@ def run_pipeline(
         markdown=resolved_markdown,
         markdown_max_tokens=resolved_markdown_max_tokens,
         extraction_max_tokens=resolved_extraction_max_tokens,
+        max_tokens=resolved_max_tokens,
     )
     return {"output_path": csv_path, "relevant_count": relevant_count}
 
