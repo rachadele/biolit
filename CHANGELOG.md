@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.23] — 2026-03-29
+
+### Added
+- **`max_tokens` parameter on MCP `run_pipeline`** — exposes the input text token cap (default 12,500) via the MCP tool, consistent with the CLI `--max-tokens` flag and `"max_tokens"` config key. Pass `0` to use the default.
+
 ## [0.1.22] — 2026-03-26
 
 ### Added
