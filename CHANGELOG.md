@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.24] — 2026-03-31
+
+### Added
+- **MCP registry listing** — added `server.json` for publishing `biolit-mcp` to the official MCP registry (`io.github.rachadele/biolit`). Added ownership marker to README.
+
 ## [0.1.23] — 2026-03-29
 
 ### Added

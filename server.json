@@ -1,0 +1,64 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.rachadele/biolit",
+  "description": "LLM-assisted biomedical literature screening and extraction for PubMed, GEO, and preprints.",
+  "repository": {
+    "url": "https://github.com/rachadele/biolit",
+    "source": "github"
+  },
+  "version": "0.1.23",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "biolit",
+      "version": "0.1.23",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Anthropic API key (required when using the default Anthropic provider)",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "description": "OpenAI API key (required when using LLM_PROVIDER=openai)",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "LLM_PROVIDER",
+          "description": "LLM provider: anthropic (default), openai, or ollama",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "LLM_MODEL",
+          "description": "Model name override (e.g. claude-sonnet-4-6, gpt-4o)",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "SEMANTIC_SCHOLAR_API_KEY",
+          "description": "Semantic Scholar API key for higher rate limits on citation lookup (optional)",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "UNPAYWALL_EMAIL",
+          "description": "Email address for Unpaywall API access to improve PDF retrieval (optional)",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

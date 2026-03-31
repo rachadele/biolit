@@ -1,5 +1,7 @@
 # biolit
 
+<!-- mcp-name: io.github.rachadele/biolit -->
+
 LLM-assisted biomedical literature screening and structured extraction. Accepts PubMed alert emails and mixed lists of PMIDs, DOIs, and GEO accessions in any combination. Retrieves full text from PMC, Europe PMC, bioRxiv/medRxiv, Unpaywall, and Semantic Scholar. Supports multiple LLM providers and exposes all functionality as an MCP server.
 
 ## Setup
