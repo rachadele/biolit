@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.25] — 2026-03-31
+
+### Fixed
+- **MCP registry ownership marker** — added plain-text `mcp-name` line to README alongside HTML comment to satisfy registry validation.
+
 ## [0.1.24] — 2026-03-31
 
 ### Added
