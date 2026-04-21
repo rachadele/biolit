@@ -291,6 +291,10 @@ result = screen_paper(client, paper, "Is this about schizophrenia genomics?", pa
 # {"relevant": True, "reason": "..."}
 ```
 
+## Validation
+
+An independent evaluation of the GEO screening and metadata extraction workflow is available at [rachadele/biolit-eval](https://github.com/rachadele/biolit-eval). It uses a bootstrap resampling pipeline to estimate precision, recall, and F1 against a manually curated ground truth of 509 GEO accessions labelled for transcription factor perturbation experiments.
+
 ## Known Limitations
 
 - Papers without abstracts or accessible full text are skipped silently.

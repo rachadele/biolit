@@ -1,5 +1,6 @@
 .env
 .token_cache.json
+.mcpregistry_*
 *.eml
 !tests/fixtures/*.eml
 results.csv
