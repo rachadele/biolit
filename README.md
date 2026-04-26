@@ -291,6 +291,68 @@ result = screen_paper(client, paper, "Is this about schizophrenia genomics?", pa
 # {"relevant": True, "reason": "..."}
 ```
 
+## Custom full-text fetchers
+
+The built-in chain (PMC → Europe PMC → preprint → Unpaywall → Semantic
+Scholar → abstract) leaves coverage gaps for closed-access or
+recently-published work. You can plug in additional sources of full text
+— a Zotero library, a flat directory of PDFs, an institutional
+full-text database — without forking biolit.
+
+### Reference fetchers (opt-in via env vars)
+
+Two ship with biolit and self-register on import when the relevant
+environment variables are set.
+
+**Zotero.** Searches the user's Zotero library by DOI then PMID, finds
+an attached PDF, downloads it, and parses it with biolit's PDF parser.
+
+```bash
+export ZOTERO_API_KEY=...
+export ZOTERO_USER_ID=...           # or ZOTERO_GROUP_ID for a group library
+# Optional:
+export ZOTERO_PRIORITY=5.0          # lower = tried earlier (default 5.0)
+```
+
+**Local PDF directory.** Looks up `<DOI>.pdf` (with `/` replaced by `_`)
+and `<PMID>.pdf` under a directory tree.
+
+```bash
+export BIOLIT_LOCAL_PDF_DIR=~/Papers
+export BIOLIT_LOCAL_PDF_PRIORITY=3.0  # default 3.0
+```
+
+When configured, the `text_source` field in CSV/markdown output is
+`zotero_pdf` or `local_pdf` for hits from these sources. The raw bytes
+are persisted into `artifacts/<id>/zotero_pdf` / `local_pdf` exactly
+like the built-in PMC/Europe PMC artifacts.
+
+### Writing your own fetcher
+
+A fetcher is any callable that takes a `FetchContext` and returns either
+a `FetchResult` (when it found something) or `None` (when it didn't).
+
+```python
+from biolit.fetchers import FetchContext, FetchResult, register_fetcher
+
+def my_internal_db_fetcher(ctx: FetchContext) -> FetchResult | None:
+    pmid = ctx.paper.get("pmid")
+    if not pmid:
+        return None
+    text = my_db.lookup_fulltext(pmid)  # whatever you have
+    if not text:
+        return None
+    return FetchResult(text=text, source="internal_db", artifacts={})
+
+register_fetcher(my_internal_db_fetcher, priority=1.0, name="internal_db")
+```
+
+Register before the first call to `run` / `screen_by_*` (e.g. at module
+import time). Registered fetchers are tried before the built-in chain in
+priority order; the first one to return a non-empty `FetchResult.text`
+wins. Exceptions inside a fetcher are logged to stderr and the next
+fetcher is tried.
+
 ## Validation
 
 An independent evaluation of the GEO screening and metadata extraction workflow is available at [rachadele/biolit-eval](https://github.com/rachadele/biolit-eval). It uses a bootstrap resampling pipeline to estimate precision, recall, and F1 against a manually curated ground truth of 509 GEO accessions labelled for transcription factor perturbation experiments.

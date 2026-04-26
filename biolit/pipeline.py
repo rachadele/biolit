@@ -5,6 +5,7 @@ import os
 import sys
 from datetime import datetime
 
+from biolit.fetchers._hooks import FetchContext, run_registered_fetchers
 from biolit.fetchers.geo import fetch_geo_record
 from biolit.fetchers.pubmed import fetch_pubmed_metadata, fetch_pmc_fulltext, doi_to_pmid
 from biolit.fetchers.europepmc import fetch_europepmc_fulltext
@@ -276,8 +277,31 @@ def resolve_fulltext(
       6. Abstract only
 
     *sections_wanted* filters which sections are concatenated (None = all).
+
+    Custom fetchers registered via :func:`biolit.fetchers.register_fetcher`
+    are tried before the built-in chain (Zotero, on-disk PDFs, etc.). See
+    :mod:`biolit.fetchers._hooks` for the protocol.
     """
     artifacts: dict = {}
+
+    # Custom-fetcher prepended chain. The result's ``source`` is whatever
+    # the custom fetcher chose (e.g. ``zotero_pdf``, ``local_pdf``); its
+    # ``artifacts`` dict is merged into the per-paper artifacts directory
+    # exactly like the built-in PMC/EuropePMC bytes.
+    custom = run_registered_fetchers(
+        FetchContext(
+            paper=paper,
+            unpaywall_email=unpaywall_email,
+            sections_wanted=sections_wanted,
+            max_tokens=max_tokens,
+        )
+    )
+    if custom is not None and custom.text:
+        artifacts.update(custom.artifacts)
+        return custom.text, custom.source, artifacts
+    if custom is not None:
+        artifacts.update(custom.artifacts)
+
     pmid = paper.get("pmid")
     doi = paper.get("doi")
 
