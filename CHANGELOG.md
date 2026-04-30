@@ -2,6 +2,16 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.26] — 2026-04-30
+
+### Added
+- **Custom fetcher hook registry** (`biolit/fetchers/_hooks.py`) — `register_fetcher(fn, priority, name)` lets external code prepend extra full-text sources before the built-in PMC → Europe PMC → preprint → Unpaywall → Semantic Scholar chain. Fetchers receive a `FetchContext` and return a `FetchResult` (text + source label + raw artifact bytes) or `None`. Lower priority runs earlier; exceptions are logged to stderr and the next fetcher is tried.
+- **Zotero reference fetcher** (`biolit/fetchers/zotero.py`) — looks up papers in a Zotero library by DOI then PMID, downloads attached PDFs, parses them. Self-registers when `ZOTERO_API_KEY` + (`ZOTERO_USER_ID` or `ZOTERO_GROUP_ID`) are set. Resolves attachment search hits to their parent items so DOIs match correctly. Falls back to reading `$ZOTERO_DATA_DIR/storage/<key>/<filename>` (default `~/Zotero`) when the Zotero `/file` endpoint returns non-200 (covers `linked_file` attachments and unsynced imported attachments).
+- **Local-PDF reference fetcher** (`biolit/fetchers/local_pdf.py`) — DOI-keyed lookup against a pre-built JSON index. Build the index with `python -m biolit.fetchers.local_pdf --dir <path>`; the fetcher self-registers when `BIOLIT_LOCAL_PDF_DIR` is set. DOIs are extracted from each PDF's `/Info` dict and (failing that) its first-page text. Index lives at `$XDG_CACHE_HOME/biolit/local_pdf_index_<hash>.json`.
+
+### Changed
+- **`load_dotenv(override=True)`** — `cli.py`, `mcp_server.py`, and `tests/conftest.py` now pass `override=True` so values in `.env` win over a stale shell env var. Previously, an old key exported in the shell would silently shadow the value in `.env`. Editing `.env` is now enough; no need to re-source the shell or restart the terminal.
+
 ## [0.1.25] — 2026-03-31
 
 ### Fixed

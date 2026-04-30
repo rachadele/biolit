@@ -304,23 +304,45 @@ full-text database — without forking biolit.
 Two ship with biolit and self-register on import when the relevant
 environment variables are set.
 
-**Zotero.** Searches the user's Zotero library by DOI then PMID, finds
-an attached PDF, downloads it, and parses it with biolit's PDF parser.
+**Zotero.** Searches the user's Zotero library by DOI then PMID,
+resolves attachment search hits up to their parent items, finds an
+attached PDF, downloads it, and parses it with biolit's PDF parser.
+When the Zotero `/file` API endpoint returns 404 (linked_file
+attachments, or imported attachments on accounts without sync), falls
+back to reading the PDF from local Zotero storage at
+`$ZOTERO_DATA_DIR/storage/<key>/<filename>` (default data dir
+`~/Zotero`).
 
 ```bash
 export ZOTERO_API_KEY=...
 export ZOTERO_USER_ID=...           # or ZOTERO_GROUP_ID for a group library
 # Optional:
 export ZOTERO_PRIORITY=5.0          # lower = tried earlier (default 5.0)
+export ZOTERO_DATA_DIR=~/Zotero     # only needed if Zotero is not at ~/Zotero
 ```
 
-**Local PDF directory.** Looks up `<DOI>.pdf` (with `/` replaced by `_`)
-and `<PMID>.pdf` under a directory tree.
+**Local PDF directory.** Looks up papers by DOI in a pre-built JSON
+index. Filenames are arbitrary — DOIs are extracted from each PDF's
+`/Info` metadata dict and (failing that) its first-page text.
+
+Build the index once (and rebuild whenever the directory contents
+change):
+
+```bash
+python -m biolit.fetchers.local_pdf --dir ~/Papers
+python -m biolit.fetchers.local_pdf --dir ~/Papers --rebuild
+```
+
+Then point biolit at the same directory:
 
 ```bash
 export BIOLIT_LOCAL_PDF_DIR=~/Papers
 export BIOLIT_LOCAL_PDF_PRIORITY=3.0  # default 3.0
 ```
+
+The fetcher itself never builds the index — it only consults it. PDFs
+without an extractable DOI are listed in the index's
+`unindexed_sample` for visibility.
 
 When configured, the `text_source` field in CSV/markdown output is
 `zotero_pdf` or `local_pdf` for hits from these sources. The raw bytes
