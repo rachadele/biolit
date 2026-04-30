@@ -17,6 +17,13 @@ from biolit.fetchers.unpaywall import fetch_via_unpaywall
 # are surfaced to stderr but never raised — biolit must still import even
 # when an optional fetcher is misconfigured.
 try:
+    from biolit.fetchers import bibtex as _bibtex
+    _bibtex.maybe_autoload()
+except Exception as _exc:  # pragma: no cover - defensive
+    import sys as _sys
+    print(f"[biolit] bibtex autoload skipped: {_exc}", file=_sys.stderr)
+
+try:
     from biolit.fetchers import local_pdf as _local_pdf
     _local_pdf.maybe_autoload()
 except Exception as _exc:  # pragma: no cover - defensive

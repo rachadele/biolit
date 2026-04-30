@@ -237,3 +237,367 @@ def test_zotero_download_falls_back_to_local_storage(monkeypatch, tmp_path):
 
     result = z._download_attachment("ATTACH1", filename=fname)
     assert result == b"%PDF-1.4 fake content"
+
+
+# ---------------------------------------------------------------------------
+# BibTeX fetcher
+# ---------------------------------------------------------------------------
+
+
+def _write_pdf(path):
+    """Write a minimal placeholder PDF and return ``path``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"%PDF-1.4 fake")
+    return path
+
+
+def test_bibtex_parses_doi_pmid_file_and_citekey(tmp_path):
+    from biolit.fetchers.bibtex import parse_bibtex
+
+    pdf = _write_pdf(tmp_path / "storage" / "ABC" / "Doe 2024.pdf")
+    bib = tmp_path / "library.bib"
+    bib.write_text(f"""\
+@article{{doe2024,
+  title = {{An example paper}},
+  doi = {{10.1234/Example.2024}},
+  pmid = {{12345678}},
+  file = {{{pdf}}}
+}}
+""")
+    idx = parse_bibtex(bib.read_text())
+    # DOI is lowercased in the lookup table.
+    assert idx.by_doi == {"10.1234/example.2024": str(pdf)}
+    assert idx.by_pmid == {"12345678": str(pdf)}
+    assert idx.by_citekey == {"doe2024": str(pdf)}
+    assert idx.n_entries == 1
+    assert idx.n_with_pdf == 1
+
+
+def test_bibtex_picks_first_pdf_from_semicolon_list(tmp_path):
+    """BBT exports ``file = {pdf;html;...}``; the .pdf wins."""
+    from biolit.fetchers.bibtex import parse_bibtex
+
+    pdf = _write_pdf(tmp_path / "x.pdf")
+    bib_text = f"""\
+@article{{russell2025,
+  doi = {{10.18653/v1/2025.acl-long.267}},
+  file = {{{pdf};{tmp_path}/note.html}}
+}}
+"""
+    idx = parse_bibtex(bib_text)
+    assert idx.by_doi["10.18653/v1/2025.acl-long.267"] == str(pdf)
+
+
+def test_bibtex_handles_jabref_triple_format(tmp_path):
+    """Classic JabRef ``description:path:type`` form."""
+    from biolit.fetchers.bibtex import parse_bibtex
+
+    pdf = _write_pdf(tmp_path / "papers" / "smith.pdf")
+    bib_text = f"""\
+@article{{smith2010,
+  doi = {{10.1/smith}},
+  file = {{Smith 2010:{pdf}:PDF}}
+}}
+"""
+    idx = parse_bibtex(bib_text)
+    assert idx.by_doi["10.1/smith"] == str(pdf)
+
+
+def test_bibtex_skips_entries_without_pdf(tmp_path):
+    from biolit.fetchers.bibtex import parse_bibtex
+
+    bib_text = """\
+@article{nopdf2020,
+  doi = {10.1/nopdf},
+  title = {No file field here}
+}
+"""
+    idx = parse_bibtex(bib_text)
+    assert idx.n_entries == 1
+    assert idx.n_with_pdf == 0
+    assert idx.by_doi == {}
+    assert idx.by_citekey == {}
+
+
+def test_bibtex_fetcher_finds_by_doi_pmid_citekey(tmp_path):
+    from biolit.fetchers.bibtex import BibTeXFetcher
+
+    pdf = _write_pdf(tmp_path / "p.pdf")
+    bib = tmp_path / "library.bib"
+    bib.write_text(f"""\
+@article{{doe2024,
+  doi = {{10.1/abc}},
+  pmid = {{99999}},
+  file = {{{pdf}}}
+}}
+""")
+    f = BibTeXFetcher(bib_path=bib)
+    assert f._find({"doi": "10.1/abc"}) == pdf
+    # Case-insensitive DOI match.
+    assert f._find({"doi": "10.1/ABC"}) == pdf
+    assert f._find({"pmid": "99999"}) == pdf
+    assert f._find({"citekey": "doe2024"}) == pdf
+    # Unknown identifiers miss.
+    assert f._find({"doi": "10.9/nope"}) is None
+    assert f._find({"pmid": "11111"}) is None
+    assert f._find({"citekey": "smith2099"}) is None
+
+
+def test_bibtex_fetcher_returns_none_when_pdf_missing(tmp_path, capsys):
+    """Stale ``file =`` paths log a warning and miss without crashing."""
+    from biolit.fetchers.bibtex import BibTeXFetcher
+
+    bib = tmp_path / "library.bib"
+    bib.write_text("""\
+@article{ghost2030,
+  doi = {10.1/ghost},
+  file = {/nonexistent/path/to/ghost.pdf}
+}
+""")
+    f = BibTeXFetcher(bib_path=bib)
+    assert f._find({"doi": "10.1/ghost"}) is None
+    err = capsys.readouterr().err
+    assert "stale" in err and "ghost.pdf" in err
+
+
+def test_bibtex_fetcher_reparses_when_file_mtime_changes(tmp_path):
+    """Editing the .bib file invalidates the cached index automatically."""
+    import os as _os
+    from biolit.fetchers.bibtex import BibTeXFetcher
+
+    pdf1 = _write_pdf(tmp_path / "v1.pdf")
+    pdf2 = _write_pdf(tmp_path / "v2.pdf")
+    bib = tmp_path / "library.bib"
+    bib.write_text(f"@article{{a, doi = {{10.1/a}}, file = {{{pdf1}}}}}\n")
+    f = BibTeXFetcher(bib_path=bib)
+    assert f._find({"doi": "10.1/a"}) == pdf1
+
+    # Rewrite to point at pdf2; bump mtime forward to ensure cache invalidates.
+    bib.write_text(f"@article{{a, doi = {{10.1/a}}, file = {{{pdf2}}}}}\n")
+    future = bib.stat().st_mtime + 5
+    _os.utime(bib, (future, future))
+    assert f._find({"doi": "10.1/a"}) == pdf2
+
+
+def test_bibtex_fetcher_handles_missing_bib_file(tmp_path, capsys):
+    from biolit.fetchers.bibtex import BibTeXFetcher
+
+    f = BibTeXFetcher(bib_path=tmp_path / "missing.bib")
+    assert f._find({"doi": "10.1/anything"}) is None
+    err = capsys.readouterr().err
+    assert "does not exist" in err
+
+
+def test_bibtex_maybe_autoload_registers_when_env_set(tmp_path, monkeypatch):
+    from biolit.fetchers import bibtex as _bib
+
+    bib = tmp_path / "library.bib"
+    bib.write_text("@article{x, doi = {10.1/x}, file = {/tmp/x.pdf}}\n")
+    monkeypatch.setenv("BIOLIT_BIBTEX", str(bib))
+
+    assert _bib.maybe_autoload() is True
+    names = [name for _, name, _ in registered_fetchers()]
+    assert "bibtex" in names
+
+
+def test_bibtex_maybe_autoload_skips_when_path_invalid(tmp_path, monkeypatch, capsys):
+    from biolit.fetchers import bibtex as _bib
+
+    monkeypatch.setenv("BIOLIT_BIBTEX", str(tmp_path / "does-not-exist.bib"))
+    assert _bib.maybe_autoload() is False
+    err = capsys.readouterr().err
+    assert "is not a file" in err
+
+
+# ---------------------------------------------------------------------------
+# local_pdf incremental indexing
+# ---------------------------------------------------------------------------
+
+
+def test_local_pdf_incremental_reuses_unchanged_files(tmp_path, monkeypatch):
+    """A second build reuses prior DOIs without re-running pdfminer."""
+    from biolit.fetchers import local_pdf
+
+    pdf_dir = tmp_path / "papers"
+    pdf_dir.mkdir()
+    p1 = _write_pdf(pdf_dir / "a.pdf")
+    p2 = _write_pdf(pdf_dir / "b.pdf")
+    idx_path = tmp_path / "idx.json"
+
+    extract_calls = {"n": 0}
+
+    def fake_extract_doi(path):
+        extract_calls["n"] += 1
+        return "10.1/" + path.stem
+    monkeypatch.setattr(local_pdf, "extract_doi", fake_extract_doi)
+
+    # First build extracts both.
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+    assert extract_calls["n"] == 2
+
+    # Second build (default incremental=True) should not extract again.
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+    assert extract_calls["n"] == 2  # unchanged
+
+    # The index should still resolve both DOIs.
+    payload = __import__("json").loads(idx_path.read_text())
+    assert set(payload["doi_to_path"].keys()) == {"10.1/a", "10.1/b"}
+    assert payload["schema_version"] == 2
+    assert set(payload["entries"].keys()) == {str(p1), str(p2)}
+
+
+def test_local_pdf_incremental_reextracts_changed_files(tmp_path, monkeypatch):
+    """Bumping a file's mtime forces re-extraction of just that file."""
+    import os as _os
+    from biolit.fetchers import local_pdf
+
+    pdf_dir = tmp_path / "papers"
+    pdf_dir.mkdir()
+    pa = _write_pdf(pdf_dir / "a.pdf")
+    pb = _write_pdf(pdf_dir / "b.pdf")
+    idx_path = tmp_path / "idx.json"
+
+    state = {"a_doi": "10.1/old-a", "b_doi": "10.1/old-b"}
+    extract_paths: list[str] = []
+
+    def fake_extract_doi(path):
+        extract_paths.append(str(path))
+        return state["a_doi"] if path.name == "a.pdf" else state["b_doi"]
+    monkeypatch.setattr(local_pdf, "extract_doi", fake_extract_doi)
+
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+    assert sorted(p for p in extract_paths if p.endswith(".pdf")) == sorted([str(pa), str(pb)])
+    extract_paths.clear()
+
+    # Modify only 'a.pdf' and bump its mtime.
+    pa.write_bytes(b"%PDF-1.4 newer content")
+    future = pa.stat().st_mtime + 5
+    _os.utime(pa, (future, future))
+    state["a_doi"] = "10.1/new-a"
+
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+    # Only 'a.pdf' should have been re-extracted.
+    assert extract_paths == [str(pa)]
+
+    payload = __import__("json").loads(idx_path.read_text())
+    assert payload["doi_to_path"]["10.1/new-a"] == str(pa)
+    assert payload["doi_to_path"]["10.1/old-b"] == str(pb)
+    assert "10.1/old-a" not in payload["doi_to_path"]
+
+
+def test_local_pdf_incremental_drops_deleted_files(tmp_path, monkeypatch):
+    from biolit.fetchers import local_pdf
+
+    pdf_dir = tmp_path / "papers"
+    pdf_dir.mkdir()
+    pa = _write_pdf(pdf_dir / "a.pdf")
+    pb = _write_pdf(pdf_dir / "b.pdf")
+    idx_path = tmp_path / "idx.json"
+
+    monkeypatch.setattr(
+        local_pdf, "extract_doi",
+        lambda path: "10.1/" + path.stem,
+    )
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+
+    pb.unlink()
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+
+    payload = __import__("json").loads(idx_path.read_text())
+    assert set(payload["entries"].keys()) == {str(pa)}
+    assert payload["doi_to_path"] == {"10.1/a": str(pa)}
+
+
+def test_local_pdf_incremental_picks_up_new_files(tmp_path, monkeypatch):
+    from biolit.fetchers import local_pdf
+
+    pdf_dir = tmp_path / "papers"
+    pdf_dir.mkdir()
+    pa = _write_pdf(pdf_dir / "a.pdf")
+    idx_path = tmp_path / "idx.json"
+
+    monkeypatch.setattr(
+        local_pdf, "extract_doi",
+        lambda path: "10.1/" + path.stem,
+    )
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+
+    pb = _write_pdf(pdf_dir / "b.pdf")
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+
+    payload = __import__("json").loads(idx_path.read_text())
+    assert set(payload["entries"].keys()) == {str(pa), str(pb)}
+    assert set(payload["doi_to_path"].keys()) == {"10.1/a", "10.1/b"}
+
+
+def test_local_pdf_rebuild_forces_reextraction(tmp_path, monkeypatch):
+    from biolit.fetchers import local_pdf
+
+    pdf_dir = tmp_path / "papers"
+    pdf_dir.mkdir()
+    _write_pdf(pdf_dir / "a.pdf")
+    idx_path = tmp_path / "idx.json"
+
+    calls = {"n": 0}
+
+    def fake_extract_doi(path):
+        calls["n"] += 1
+        return "10.1/a"
+    monkeypatch.setattr(local_pdf, "extract_doi", fake_extract_doi)
+
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+    assert calls["n"] == 1
+
+    # incremental=False forces re-extraction even though mtime is unchanged.
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False, incremental=False)
+    assert calls["n"] == 2
+
+
+def test_local_pdf_v1_index_is_rebuilt_under_incremental(tmp_path, monkeypatch):
+    """Old indexes (no ``entries`` block) should trigger full re-extraction."""
+    import json as _json
+    from biolit.fetchers import local_pdf
+
+    pdf_dir = tmp_path / "papers"
+    pdf_dir.mkdir()
+    pa = _write_pdf(pdf_dir / "a.pdf")
+    idx_path = tmp_path / "idx.json"
+    # v1 schema: no `entries` block, just doi_to_path.
+    idx_path.write_text(_json.dumps({
+        "directory": str(pdf_dir),
+        "n_pdfs": 1,
+        "n_indexed": 1,
+        "n_unindexed": 0,
+        "doi_to_path": {"10.1/legacy": str(pa)},
+        "unindexed_sample": [],
+    }))
+
+    calls = {"n": 0}
+
+    def fake_extract_doi(path):
+        calls["n"] += 1
+        return "10.1/a"
+    monkeypatch.setattr(local_pdf, "extract_doi", fake_extract_doi)
+
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+    # v1 had no per-file state, so incremental rebuild must re-extract.
+    assert calls["n"] == 1
+    payload = _json.loads(idx_path.read_text())
+    assert payload["schema_version"] == 2
+    assert "entries" in payload
+
+
+def test_local_pdf_atomic_write_does_not_leave_tmp(tmp_path, monkeypatch):
+    from biolit.fetchers import local_pdf
+
+    pdf_dir = tmp_path / "papers"
+    pdf_dir.mkdir()
+    _write_pdf(pdf_dir / "a.pdf")
+    idx_path = tmp_path / "idx.json"
+
+    monkeypatch.setattr(local_pdf, "extract_doi", lambda path: "10.1/a")
+    local_pdf.build_index(pdf_dir, output_path=idx_path, verbose=False)
+
+    assert idx_path.is_file()
+    # No leftover .tmp from the atomic write.
+    assert not (idx_path.parent / (idx_path.name + ".tmp")).exists()
