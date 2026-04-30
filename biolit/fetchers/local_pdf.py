@@ -7,14 +7,22 @@ match is on metadata embedded in or extractable from the PDF itself.
 
 Usage:
 
-1. Build the index once (or whenever the directory changes):
+1. Build (or update) the index. Re-running the same command is cheap:
 
        python -m biolit.fetchers.local_pdf --dir ~/Papers
        python -m biolit.fetchers.local_pdf --dir ~/Papers --rebuild
 
-   This walks the directory, extracts a DOI from each PDF's metadata
-   dict and (failing that) its first-page text, and writes a JSON
-   index to ``$XDG_CACHE_HOME/biolit/local_pdf_index_<hash>.json``.
+   By default the build is **incremental**: existing entries are
+   reused unless the underlying file's ``(mtime, size)`` has changed,
+   so re-runs cost a stat per file rather than a full pdfminer pass.
+   New PDFs are indexed; deleted PDFs are dropped. Pass ``--rebuild``
+   to force a full re-extraction (useful after a pdfminer upgrade or
+   if you suspect the cache is corrupt).
+
+   The index is written to
+   ``$XDG_CACHE_HOME/biolit/local_pdf_index_<hash>.json`` and
+   replaced atomically (via a sibling ``.tmp`` file) so a Ctrl-C
+   never leaves a half-written index on disk.
 
 2. Set the env var; biolit will auto-load the fetcher:
 
@@ -29,6 +37,23 @@ The fetcher matches on DOI only. PMID-only candidates won't hit unless
 their PubMed record includes a DOI by the time biolit calls
 ``resolve_fulltext`` (the standard ``fetch_pubmed_metadata`` populates
 ``paper["doi"]`` whenever NCBI has it).
+
+Index schema (v2). The fetcher reads any version that has
+``doi_to_path``; the writer always emits both v1 and v2 fields so old
+biolit installations keep working::
+
+    {
+      "schema_version": 2,
+      "directory": "/abs/path",
+      "n_pdfs": 6682,
+      "n_indexed": 6420,        # entries with a DOI
+      "n_unindexed": 262,       # entries without
+      "doi_to_path": {<doi>: <path>},   # v1, derived from entries
+      "entries": {                       # v2: per-file state
+        "<abs path>": {"doi": "10.x/...", "mtime": 1714500000.0, "size": 2116621}
+      },
+      "unindexed_sample": [...]           # v1, retained for log readability
+    }
 """
 
 from __future__ import annotations
@@ -132,53 +157,150 @@ def extract_doi(pdf_path: Path) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def build_index(directory: Path, output_path: Path | None = None, *, verbose: bool = True) -> dict:
+SCHEMA_VERSION = 2
+
+
+def _load_existing_entries(output_path: Path) -> dict[str, dict]:
+    """Read v2 ``entries`` from an existing index, if any. Returns
+    ``{abs_path: {"doi": str|None, "mtime": float, "size": int}}``.
+
+    v1 indexes (no ``entries`` block) yield an empty dict — they
+    get a full rebuild on first incremental run, which matches what
+    they did historically.
+    """
+    if not output_path.is_file():
+        return {}
+    try:
+        payload = json.loads(output_path.read_text())
+    except Exception as e:
+        print(f"[local_pdf] cannot read existing index {output_path}: {e}; doing full rebuild", file=sys.stderr)
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    entries = payload.get("entries")
+    if not isinstance(entries, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for path, meta in entries.items():
+        if not isinstance(meta, dict):
+            continue
+        mtime = meta.get("mtime")
+        size = meta.get("size")
+        doi = meta.get("doi")
+        if not isinstance(mtime, (int, float)) or not isinstance(size, int):
+            continue
+        out[path] = {"doi": doi, "mtime": float(mtime), "size": size}
+    return out
+
+
+def _atomic_write_json(payload: dict, output_path: Path) -> None:
+    """Write JSON to ``output_path`` via a ``.tmp`` sibling + rename.
+    Avoids a half-written file on Ctrl-C or crash."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output_path.with_suffix(output_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2))
+    os.replace(tmp, output_path)
+
+
+def build_index(
+    directory: Path,
+    output_path: Path | None = None,
+    *,
+    verbose: bool = True,
+    incremental: bool = True,
+) -> dict:
     """Walk ``directory`` recursively, extract DOIs, and persist a JSON
-    index. Returns the in-memory index. Also stores a small manifest of
-    files-without-DOIs for visibility.
+    index. Returns the in-memory index payload.
+
+    By default the build is incremental: an existing index is loaded
+    and every PDF whose ``(mtime, size)`` matches its prior entry is
+    reused without re-running pdfminer. This makes a re-run on an
+    unchanged 10k-PDF library cost a few seconds (one stat per file)
+    instead of many minutes. Pass ``incremental=False`` to force a
+    full re-extraction.
     """
     if not directory.is_dir():
         raise FileNotFoundError(f"not a directory: {directory}")
     if output_path is None:
         output_path = _index_cache_path(directory)
 
+    existing = _load_existing_entries(output_path) if incremental else {}
+
     pdfs = sorted(directory.rglob("*.pdf"))
     if verbose:
-        print(f"[local_pdf] scanning {len(pdfs)} PDFs under {directory}", file=sys.stderr)
+        mode = "incremental" if existing else ("rebuild" if not incremental else "first build")
+        print(
+            f"[local_pdf] {mode}: scanning {len(pdfs)} PDFs under {directory}",
+            file=sys.stderr,
+        )
 
-    iterator: object = pdfs
+    # Decide per-file whether we can reuse the prior DOI extraction.
+    #
+    # pdfs_to_extract holds the (path, stat) pairs that need pdfminer;
+    # everything else is copied straight from `existing`.
+    reused: list[tuple[Path, float, int, str | None]] = []     # (path, mtime, size, doi)
+    pdfs_to_extract: list[tuple[Path, float, int]] = []
+    for pdf in pdfs:
+        try:
+            st = pdf.stat()
+        except OSError:
+            continue
+        prior = existing.get(str(pdf))
+        if prior is not None and prior["mtime"] == st.st_mtime and prior["size"] == st.st_size:
+            reused.append((pdf, st.st_mtime, st.st_size, prior["doi"]))
+        else:
+            pdfs_to_extract.append((pdf, st.st_mtime, st.st_size))
+
+    if verbose and existing:
+        print(
+            f"[local_pdf] reusing {len(reused)} prior entries; "
+            f"extracting {len(pdfs_to_extract)} new/changed PDFs",
+            file=sys.stderr,
+        )
+
+    iterator: object = pdfs_to_extract
     try:
         from tqdm import tqdm  # type: ignore[import-not-found]
-        if verbose:
-            iterator = tqdm(pdfs, unit="pdf")
+        if verbose and pdfs_to_extract:
+            iterator = tqdm(pdfs_to_extract, unit="pdf")
     except ImportError:
         pass
 
+    new_entries: list[tuple[Path, float, int, str | None]] = []
+    for pdf, mtime, size in iterator:  # type: ignore[assignment]
+        doi = extract_doi(pdf)
+        new_entries.append((pdf, mtime, size, doi))
+
+    # Merge.
+    entries: dict[str, dict] = {}
     doi_to_path: dict[str, str] = {}
     no_doi: list[str] = []
-    for pdf in iterator:  # type: ignore[assignment]
-        doi = extract_doi(pdf)
+    for pdf, mtime, size, doi in reused + new_entries:
+        path_str = str(pdf)
+        entries[path_str] = {"doi": doi, "mtime": mtime, "size": size}
         if doi:
-            # First write wins (deterministic on a stable rglob order).
-            doi_to_path.setdefault(doi, str(pdf))
+            # First write wins (sorted rglob order is deterministic).
+            doi_to_path.setdefault(doi, path_str)
         else:
-            no_doi.append(str(pdf))
+            no_doi.append(path_str)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
+        "schema_version": SCHEMA_VERSION,
         "directory": str(directory),
         "n_pdfs": len(pdfs),
         "n_indexed": len(doi_to_path),
         "n_unindexed": len(no_doi),
         "doi_to_path": doi_to_path,
+        "entries": entries,
         # Truncated so a 10k-PDF library doesn't bloat the JSON.
         "unindexed_sample": no_doi[:50],
     }
-    output_path.write_text(json.dumps(payload, indent=2))
+    _atomic_write_json(payload, output_path)
     if verbose:
         print(
             f"[local_pdf] indexed {len(doi_to_path)}/{len(pdfs)} PDFs "
-            f"({len(no_doi)} without extractable DOI)\n"
+            f"({len(no_doi)} without extractable DOI; "
+            f"{len(new_entries)} extracted this run, {len(reused)} reused)\n"
             f"           index: {output_path}",
             file=sys.stderr,
         )
@@ -312,7 +434,11 @@ def maybe_autoload() -> bool:
 def _cli_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m biolit.fetchers.local_pdf",
-        description="Build a DOI-keyed index of a directory of PDFs.",
+        description=(
+            "Build or update a DOI-keyed index of a directory of PDFs. "
+            "Re-running is cheap: by default only new or changed PDFs are "
+            "re-extracted. Pass --rebuild to force a full re-extraction."
+        ),
     )
     parser.add_argument(
         "--dir",
@@ -324,7 +450,10 @@ def _cli_main(argv: list[str] | None = None) -> int:
         "--index", type=Path, default=None,
         help="Output index path (defaults to a stable XDG cache location).",
     )
-    parser.add_argument("--rebuild", action="store_true", help="Force rebuild of an existing index.")
+    parser.add_argument(
+        "--rebuild", action="store_true",
+        help="Force a full re-extraction of every PDF, even ones whose mtime is unchanged.",
+    )
     args = parser.parse_args(argv)
 
     if args.dir is None or not args.dir.is_dir():
@@ -332,10 +461,7 @@ def _cli_main(argv: list[str] | None = None) -> int:
         return 2
 
     out = args.index or _index_cache_path(args.dir.expanduser())
-    if out.is_file() and not args.rebuild:
-        print(f"[local_pdf] index already exists at {out}; pass --rebuild to overwrite", file=sys.stderr)
-        return 0
-    build_index(args.dir.expanduser(), output_path=out)
+    build_index(args.dir.expanduser(), output_path=out, incremental=not args.rebuild)
     return 0
 
 

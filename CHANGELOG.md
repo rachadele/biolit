@@ -2,6 +2,15 @@
 
 All notable changes to `biolit` are documented here.
 
+## [Unreleased]
+
+### Added
+- **BibTeX-backed reference fetcher** (`biolit/fetchers/bibtex.py`) — looks up papers in a `.bib` export by DOI, PMID, or citekey, reads the path from each entry's `file = {...}` field, and parses the PDF directly. Self-registers when `BIOLIT_BIBTEX` points at a `.bib` file (priority 2.0, before `local_pdf` and `zotero`); priority is overridable via `BIOLIT_BIBTEX_PRIORITY`. Fills the gap left by the Zotero web API's q-search not indexing the structured `DOI` field — for users who maintain a Better-BibTeX (or equivalent) export, lookups become offline, instant, and exact instead of relying on the Zotero search index. Supports both BBT semicolon-separated `file` lists and the classic JabRef `description:path:type` triple format. Re-parses automatically when the source `.bib` file's mtime changes.
+
+### Changed
+- **`local_pdf` indexing is now incremental by default** — re-running `python -m biolit.fetchers.local_pdf --dir <path>` reuses prior entries whose `(mtime, size)` is unchanged, so a re-run on an unchanged 10k-PDF library now costs a stat per file rather than a full pdfminer pass over every PDF. New PDFs are picked up; deleted PDFs are dropped; modified PDFs are re-extracted. The CLI no longer refuses to run when an index already exists at the target path — pass `--rebuild` to force a full re-extraction (e.g. after a pdfminer upgrade or if you suspect cache corruption).
+- **`local_pdf` index schema bumped to v2** — adds an `entries: {<path>: {doi, mtime, size}}` block alongside the existing `doi_to_path`. v1 indexes (no `entries` block) are detected and trigger a one-shot full rebuild, after which subsequent runs are incremental. The on-disk format is written atomically (`.tmp` + rename) so a Ctrl-C never leaves a half-written index behind.
+
 ## [0.1.26] — 2026-04-30
 
 ### Added

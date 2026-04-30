@@ -301,8 +301,27 @@ full-text database — without forking biolit.
 
 ### Reference fetchers (opt-in via env vars)
 
-Two ship with biolit and self-register on import when the relevant
-environment variables are set.
+Three ship with biolit and self-register on import when the relevant
+environment variables are set. Default priorities (lower = tried
+earlier) are `bibtex=2.0`, `local_pdf=3.0`, `zotero=5.0`.
+
+**BibTeX.** Looks up papers by DOI, PMID, or citekey in a `.bib`
+export, reads the path from each entry's `file = {...}` field, and
+parses the PDF directly. Best fit for users who maintain a
+Better-BibTeX (or equivalent) auto-export — lookups are offline,
+in-memory, and exact, with no network round-trip and no dependence on
+the Zotero search index. Works around the Zotero web API's q-search
+not indexing the structured `DOI` field, which makes DOI lookups via
+that API unreliable for items where the DOI doesn't appear in indexed
+attachment full-text. Supports both BBT semicolon-separated `file`
+lists and the classic JabRef `description:path:type` format. The bib
+file is re-parsed automatically when its mtime changes.
+
+```bash
+export BIOLIT_BIBTEX=~/Zotero/My\ Library.bib
+# Optional:
+export BIOLIT_BIBTEX_PRIORITY=2.0   # lower = tried earlier (default 2.0)
+```
 
 **Zotero.** Searches the user's Zotero library by DOI then PMID,
 resolves attachment search hits up to their parent items, finds an
@@ -311,7 +330,9 @@ When the Zotero `/file` API endpoint returns 404 (linked_file
 attachments, or imported attachments on accounts without sync), falls
 back to reading the PDF from local Zotero storage at
 `$ZOTERO_DATA_DIR/storage/<key>/<filename>` (default data dir
-`~/Zotero`).
+`~/Zotero`). Note: Zotero's web API q-search does not index the
+structured DOI field, so the BibTeX fetcher above is more reliable
+when both are available.
 
 ```bash
 export ZOTERO_API_KEY=...
@@ -325,12 +346,12 @@ export ZOTERO_DATA_DIR=~/Zotero     # only needed if Zotero is not at ~/Zotero
 index. Filenames are arbitrary — DOIs are extracted from each PDF's
 `/Info` metadata dict and (failing that) its first-page text.
 
-Build the index once (and rebuild whenever the directory contents
-change):
+Build (or update) the index. Re-running is cheap — by default only
+new or changed PDFs are re-extracted:
 
 ```bash
 python -m biolit.fetchers.local_pdf --dir ~/Papers
-python -m biolit.fetchers.local_pdf --dir ~/Papers --rebuild
+python -m biolit.fetchers.local_pdf --dir ~/Papers --rebuild   # force full re-extraction
 ```
 
 Then point biolit at the same directory:
@@ -345,9 +366,10 @@ without an extractable DOI are listed in the index's
 `unindexed_sample` for visibility.
 
 When configured, the `text_source` field in CSV/markdown output is
-`zotero_pdf` or `local_pdf` for hits from these sources. The raw bytes
-are persisted into `artifacts/<id>/zotero_pdf` / `local_pdf` exactly
-like the built-in PMC/Europe PMC artifacts.
+`bibtex_pdf`, `zotero_pdf`, or `local_pdf` for hits from these
+sources. The raw bytes are persisted into `artifacts/<id>/bibtex_pdf`
+/ `zotero_pdf` / `local_pdf` exactly like the built-in PMC/Europe PMC
+artifacts.
 
 ### Writing your own fetcher
 
