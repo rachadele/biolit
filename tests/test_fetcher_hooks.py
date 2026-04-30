@@ -152,3 +152,88 @@ def test_doi_regex_strips_trailing_punctuation():
     m = DOI_RE.search("see 10.1234/abc.def.")
     assert m is not None
     assert _clean_doi(m.group(0)) == "10.1234/abc.def"
+
+
+def _mock_response(status: int, json_body=None, content: bytes = b""):
+    """Build a minimal stand-in for ``requests.Response``."""
+    from unittest.mock import MagicMock
+
+    r = MagicMock()
+    r.status_code = status
+    r.content = content
+    if json_body is not None:
+        r.json.return_value = json_body
+    r.raise_for_status = lambda: None
+    return r
+
+
+def test_zotero_finds_via_attachment_parent(monkeypatch):
+    """qmode=everything returns attachment hits; fetcher must follow parentItem."""
+    from biolit.fetchers.zotero import ZoteroFetcher
+
+    z = ZoteroFetcher(api_key="k", user_id="123")
+    target_doi = "10.1234/test.paper"
+
+    def fake_get(url, **kwargs):
+        if kwargs.get("params", {}).get("q"):
+            # _search_by_query: return one attachment hit, no DOI on attachment
+            return _mock_response(200, json_body=[{
+                "key": "ATTACH1",
+                "data": {"itemType": "attachment", "parentItem": "PARENT1"},
+            }])
+        if url.endswith("/items/PARENT1"):
+            return _mock_response(200, json_body={
+                "key": "PARENT1",
+                "data": {"itemType": "journalArticle", "DOI": target_doi.upper(), "title": "x"},
+            })
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr("biolit.fetchers.zotero.requests.get", fake_get)
+    result = z._find_item({"doi": target_doi, "pmid": None})
+    assert result is not None
+    assert result["key"] == "PARENT1"
+
+
+def test_zotero_does_not_return_unrelated_attachment_hits(monkeypatch):
+    """Single attachment hit whose parent has a DIFFERENT DOI must NOT be returned
+    (was the "exactly one hit" soft-fallback bug)."""
+    from biolit.fetchers.zotero import ZoteroFetcher
+
+    z = ZoteroFetcher(api_key="k", user_id="123")
+
+    def fake_get(url, **kwargs):
+        if kwargs.get("params", {}).get("q"):
+            return _mock_response(200, json_body=[{
+                "key": "ATTACH1",
+                "data": {"itemType": "attachment", "parentItem": "OTHER"},
+            }])
+        if url.endswith("/items/OTHER"):
+            return _mock_response(200, json_body={
+                "key": "OTHER",
+                "data": {"itemType": "journalArticle", "DOI": "10.9999/different"},
+            })
+        raise AssertionError(f"unexpected URL: {url}")
+
+    monkeypatch.setattr("biolit.fetchers.zotero.requests.get", fake_get)
+    assert z._find_item({"doi": "10.1234/we-want-this", "pmid": None}) is None
+
+
+def test_zotero_download_falls_back_to_local_storage(monkeypatch, tmp_path):
+    """When /file returns 404, read the PDF from local Zotero storage."""
+    from biolit.fetchers.zotero import ZoteroFetcher
+
+    z = ZoteroFetcher(api_key="k", user_id="123")
+    monkeypatch.setenv("ZOTERO_DATA_DIR", str(tmp_path))
+
+    fname = "Author 2020 - Paper.pdf"
+    pdf_dir = tmp_path / "storage" / "ATTACH1"
+    pdf_dir.mkdir(parents=True)
+    (pdf_dir / fname).write_bytes(b"%PDF-1.4 fake content")
+
+    monkeypatch.setattr(
+        "biolit.fetchers.zotero.requests.get",
+        lambda *a, **kw: _mock_response(404, content=b"Not found"),
+    )
+
+    result = z._download_attachment("ATTACH1", filename=fname)
+    assert result == b"%PDF-1.4 fake content"
