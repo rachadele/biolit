@@ -27,12 +27,17 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import requests
 
 from ._hooks import FetchContext, FetchResult, register_fetcher
 
 ZOTERO_API_BASE = "https://api.zotero.org"
+# Default Zotero data directory on macOS/Linux. Override with
+# ZOTERO_DATA_DIR if the user has configured Zotero to store its profile
+# elsewhere. The actual files live under ``<data_dir>/storage/<key>/``.
+DEFAULT_ZOTERO_DATA_DIR = "~/Zotero"
 
 
 @dataclass
@@ -91,16 +96,29 @@ class ZoteroFetcher:
         r.raise_for_status()
         return r.json()
 
-    def _download_attachment(self, attachment_key: str) -> bytes | None:
+    def _download_attachment(self, attachment_key: str, filename: str | None = None) -> bytes | None:
         r = requests.get(
             f"{self._api_base()}/items/{attachment_key}/file",
             headers=self._headers(),
             timeout=self.timeout,
             allow_redirects=True,
         )
-        if r.status_code != 200:
-            return None
-        return r.content
+        if r.status_code == 200:
+            return r.content
+        # The /file endpoint only serves attachments uploaded to Zotero's
+        # cloud storage. linked_file attachments and imported_file
+        # attachments on accounts without sync return 404. Fall back to
+        # the user's local Zotero storage tree.
+        if filename:
+            data_dir = Path(os.environ.get("ZOTERO_DATA_DIR") or DEFAULT_ZOTERO_DATA_DIR).expanduser()
+            local = data_dir / "storage" / attachment_key / filename
+            try:
+                pdf_bytes = local.read_bytes()
+            except OSError:
+                return None
+            print(f"  [zotero] /file returned {r.status_code}; read from {local}", file=sys.stderr)
+            return pdf_bytes
+        return None
 
     def _find_item(self, paper: dict) -> dict | None:
         """Best-effort match by DOI then PMID. Returns the first item
@@ -165,7 +183,7 @@ class ZoteroFetcher:
                 continue
             if (data.get("contentType") or "").lower() != "application/pdf":
                 continue
-            pdf_bytes = self._download_attachment(child["key"])
+            pdf_bytes = self._download_attachment(child["key"], filename=data.get("filename"))
             if not pdf_bytes:
                 continue
             try:
