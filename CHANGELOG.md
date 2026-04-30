@@ -2,7 +2,10 @@
 
 All notable changes to `biolit` are documented here.
 
-## [Unreleased]
+## [0.1.27] — 2026-04-30
+
+### Fixed
+- **Test suite isolation** — `tests/conftest.py` now clears the fetcher registry at session start so any fetchers auto-registered from the developer's `.env` (`BIOLIT_BIBTEX`, `BIOLIT_LOCAL_PDF_DIR`, `ZOTERO_API_KEY`, …) don't contaminate pipeline tests. Previously, a developer with `BIOLIT_BIBTEX` set could see `test_pipeline.py` failures when a test DOI happened to be in their `.bib` library.
 
 ### Added
 - **BibTeX-backed reference fetcher** (`biolit/fetchers/bibtex.py`) — looks up papers in a `.bib` export by DOI, PMID, or citekey, reads the path from each entry's `file = {...}` field, and parses the PDF directly. Self-registers when `BIOLIT_BIBTEX` points at a `.bib` file (priority 2.0, before `local_pdf` and `zotero`); priority is overridable via `BIOLIT_BIBTEX_PRIORITY`. Fills the gap left by the Zotero web API's q-search not indexing the structured `DOI` field — for users who maintain a Better-BibTeX (or equivalent) export, lookups become offline, instant, and exact instead of relying on the Zotero search index. Supports both BBT semicolon-separated `file` lists and the classic JabRef `description:path:type` triple format. Re-parses automatically when the source `.bib` file's mtime changes.

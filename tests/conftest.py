@@ -6,6 +6,13 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
+# Clear any fetchers auto-registered from the developer's .env (BIOLIT_BIBTEX,
+# BIOLIT_LOCAL_PDF_DIR, ZOTERO_API_KEY, ...) so the test suite isn't
+# contaminated by the local environment. Tests that exercise the registry
+# register their own fetchers explicitly.
+from biolit.fetchers import _hooks as _fetcher_hooks
+_fetcher_hooks._REGISTRY.clear()
+
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
 # PMIDs present in test1.eml (18 articles from the 2026-03-08 "schizophrenia genomics" alert)
