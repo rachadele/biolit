@@ -13,7 +13,7 @@ from biolit.pipeline import run, screen_by_pmid, screen_by_geo, screen_by_doi
 from biolit.parsers.utils import DEFAULT_MAX_TOKENS
 from biolit.utils import read_eml_body, extract_pmids, read_pmids_file, read_dois_from_bib
 
-load_dotenv()
+load_dotenv(override=True)
 
 DEFAULT_CRITERION = (
     "Is this paper SPECIFICALLY about schizophrenia AND does it use genetics "

@@ -38,7 +38,7 @@ from biolit.pipeline import (
 )
 from biolit.utils import extract_pmids, read_eml_body, read_ids_file, read_dois_from_bib
 
-load_dotenv()
+load_dotenv(override=True)
 
 mcp = FastMCP("biolit")
 

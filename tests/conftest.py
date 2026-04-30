@@ -1,6 +1,10 @@
 """Shared pytest fixtures."""
 import pathlib
+
 import pytest
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
