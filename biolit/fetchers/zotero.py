@@ -80,6 +80,17 @@ class ZoteroFetcher:
         r.raise_for_status()
         return r.json()
 
+    def _get_item(self, item_key: str) -> dict | None:
+        r = requests.get(
+            f"{self._api_base()}/items/{item_key}",
+            headers=self._headers(),
+            timeout=self.timeout,
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.json()
+
     def _download_attachment(self, attachment_key: str) -> bytes | None:
         r = requests.get(
             f"{self._api_base()}/items/{attachment_key}/file",
@@ -92,8 +103,15 @@ class ZoteroFetcher:
         return r.content
 
     def _find_item(self, paper: dict) -> dict | None:
-        """Best-effort match by DOI then PMID. Returns the first hit whose
-        DOI or extra-field PMID matches what we asked for."""
+        """Best-effort match by DOI then PMID. Returns the first item
+        whose DOI or extra-field PMID matches what we asked for.
+
+        ``qmode=everything`` searches attachment full-text too, so hits are
+        often the PDF attachment of a *different* paper that happens to
+        cite the DOI we asked about. To match correctly we resolve every
+        attachment hit to its parent item and compare against the parent's
+        DOI / extra fields.
+        """
         doi = (paper.get("doi") or "").strip()
         pmid = (paper.get("pmid") or "").strip()
 
@@ -107,15 +125,24 @@ class ZoteroFetcher:
                 continue
             for hit in hits:
                 data = hit.get("data", {})
-                hit_doi = (data.get("DOI") or "").lower()
-                hit_extra = (data.get("extra") or "").lower()
-                if doi and hit_doi == doi.lower():
-                    return hit
-                if pmid and (f"pmid: {pmid}" in hit_extra or f"pmid:{pmid}" in hit_extra):
-                    return hit
-            # Soft fallback: take the first hit if exactly one was returned.
-            if len(hits) == 1:
-                return hits[0]
+                if data.get("itemType") == "attachment" and data.get("parentItem"):
+                    try:
+                        parent = self._get_item(data["parentItem"])
+                    except Exception as e:
+                        print(f"  [zotero] parent fetch error: {e}", file=sys.stderr)
+                        continue
+                    if parent is None:
+                        continue
+                    candidate = parent
+                else:
+                    candidate = hit
+                cdata = candidate.get("data", {})
+                cand_doi = (cdata.get("DOI") or "").lower()
+                cand_extra = (cdata.get("extra") or "").lower()
+                if doi and cand_doi == doi.lower():
+                    return candidate
+                if pmid and (f"pmid: {pmid}" in cand_extra or f"pmid:{pmid}" in cand_extra):
+                    return candidate
         return None
 
     def __call__(self, ctx: FetchContext) -> FetchResult | None:
