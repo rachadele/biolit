@@ -1,6 +1,5 @@
 """OpenAI (and OpenAI-compatible) client."""
-import os
-from biolit.llm.base import BaseLLMClient
+from biolit.llm.base import BaseLLMClient, resolve_api_key
 
 
 class OpenAIClient(BaseLLMClient):
@@ -10,9 +9,11 @@ class OpenAIClient(BaseLLMClient):
             import openai
         except ImportError:
             raise ImportError("Install openai: pip install openai")
-        api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        api_key = api_key or resolve_api_key("OPENAI_API_KEY")
         if not api_key:
-            raise EnvironmentError("OPENAI_API_KEY not set")
+            raise EnvironmentError(
+                "OPENAI_API_KEY not set in environment or macOS keychain"
+            )
         kwargs: dict = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url

@@ -23,6 +23,7 @@ dependencies = [
     "openai",
     "requests",
     "python-dotenv",
+    "keyring",
     "lxml",
     "pdfminer.six",
     "mcp[cli]",

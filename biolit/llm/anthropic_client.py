@@ -1,15 +1,16 @@
 """Anthropic Claude client."""
-import os
 import anthropic
-from biolit.llm.base import BaseLLMClient
+from biolit.llm.base import BaseLLMClient, resolve_api_key
 
 
 class AnthropicClient(BaseLLMClient):
     def __init__(self, model: str, api_key: str | None = None):
         super().__init__(model)
-        api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        api_key = api_key or resolve_api_key("ANTHROPIC_API_KEY")
         if not api_key:
-            raise EnvironmentError("ANTHROPIC_API_KEY not set")
+            raise EnvironmentError(
+                "ANTHROPIC_API_KEY not set in environment or macOS keychain"
+            )
         self._client = anthropic.Anthropic(api_key=api_key)
 
     def chat(self, messages: list[dict], max_tokens: int = 512) -> str:
