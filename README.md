@@ -28,6 +28,16 @@ cp .env.example .env
 # edit .env and set ANTHROPIC_API_KEY (or OPENAI_API_KEY)
 ```
 
+On macOS, you can store the key in the system keychain instead of `.env`. biolit consults the keychain (by service name only, no account required) when the env var is unset:
+
+```bash
+security add-generic-password -s ANTHROPIC_API_KEY -w
+# or for OpenAI:
+security add-generic-password -s OPENAI_API_KEY -w
+```
+
+Omit `-w <value>` to be prompted for the key without echoing it. Env vars take precedence when both are set.
+
 ## Usage
 
 The tool accepts a PubMed alert email (`.eml`) or a plain-text file of identifiers, as well as inline identifiers via `--ids`. Identifiers can be PMIDs, DOIs, or GEO accessions — mixed lists are supported in a single run.

@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.28] — 2026-05-01
+
+### Added
+- **macOS keychain fallback for API keys** — `AnthropicClient` and `OpenAIClient` now consult the macOS keychain when `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` is not set in the environment. The lookup uses the `security` command and matches by service name only (no account required), so an entry stored the conventional way — `security add-generic-password -s ANTHROPIC_API_KEY -w` — works as-is. Env vars still win when present, so `.env` workflows are unchanged. New helper `biolit.llm.base.resolve_api_key(env_var)` encapsulates the lookup. No new Python dependencies (uses macOS's built-in `security` binary).
+
 ## [0.1.27] — 2026-04-30
 
 ### Fixed
