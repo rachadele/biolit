@@ -6,15 +6,14 @@ from abc import ABC, abstractmethod
 
 
 def resolve_api_key(env_var: str) -> str | None:
-    """Return the API key from the env var, falling back to the macOS keychain.
+    """Return the API key from the macOS keychain, falling back to the env var.
 
-    On macOS, the keychain is queried by service name only (no account
-    required), so an entry stored with the conventional ``security
-    add-generic-password -s <env_var> -w`` works as-is.
+    Keychain is preferred so a stale ``.env`` value (loaded with
+    ``override=True``) cannot mask a working keychain entry. The keychain
+    is queried by service name only, so an entry stored with
+    ``security add-generic-password -s <env_var> -w`` works as-is.
+    On non-darwin platforms, only the env var is consulted.
     """
-    api_key = os.environ.get(env_var)
-    if api_key:
-        return api_key
     if sys.platform == "darwin":
         try:
             r = subprocess.run(
@@ -27,7 +26,7 @@ def resolve_api_key(env_var: str) -> str | None:
                     return value
         except Exception:
             pass
-    return None
+    return os.environ.get(env_var)
 
 
 class BaseLLMClient(ABC):

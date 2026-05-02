@@ -2,6 +2,26 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.29] — 2026-05-01
+
+### Added
+- **Configurable provider for `biolit-mcp`** — the MCP server now accepts `--provider` and `--model` CLI flags, so the LLM can be selected from `.mcp.json` / `claude_desktop_config.json` without an `env` block:
+  ```json
+  {
+    "mcpServers": {
+      "biolit": {
+        "command": "biolit-mcp",
+        "args": ["--provider", "openai", "--model", "gpt-4o-mini"]
+      }
+    }
+  }
+  ```
+  Flags take precedence over `LLM_PROVIDER` / `LLM_MODEL` env vars; both still work.
+
+### Changed
+- **Keychain is now preferred over env vars for API key resolution** — `biolit.llm.base.resolve_api_key()` checks the macOS keychain first, then falls back to the env var (previously env-first). This prevents a stale value in `.env` (loaded with `override=True`) from masking a working keychain entry. On non-darwin platforms the env var remains the only source.
+- **`biolit-mcp` lazily initializes its LLM client** on the first LLM-touching tool call. The server now starts (and non-LLM tools like `fetch_pubmed_metadata` still work) when the configured provider's API key isn't available — failures surface only when an LLM-using tool is actually invoked.
+
 ## [0.1.28] — 2026-05-01
 
 ### Added

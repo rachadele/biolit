@@ -12,7 +12,7 @@ class OpenAIClient(BaseLLMClient):
         api_key = api_key or resolve_api_key("OPENAI_API_KEY")
         if not api_key:
             raise EnvironmentError(
-                "OPENAI_API_KEY not set in environment or macOS keychain"
+                "OPENAI_API_KEY not found in macOS keychain or environment"
             )
         kwargs: dict = {"api_key": api_key}
         if base_url:

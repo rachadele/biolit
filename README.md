@@ -28,7 +28,7 @@ cp .env.example .env
 # edit .env and set ANTHROPIC_API_KEY (or OPENAI_API_KEY)
 ```
 
-On macOS, you can store the key in the system keychain instead of `.env`. biolit consults the keychain (by service name only, no account required) when the env var is unset:
+On macOS, you can store the key in the system keychain instead of `.env`. biolit consults the keychain by service name only (no account required):
 
 ```bash
 security add-generic-password -s ANTHROPIC_API_KEY -w
@@ -36,7 +36,7 @@ security add-generic-password -s ANTHROPIC_API_KEY -w
 security add-generic-password -s OPENAI_API_KEY -w
 ```
 
-Omit `-w <value>` to be prompted for the key without echoing it. Env vars take precedence when both are set.
+Omit `-w <value>` to be prompted for the key without echoing it. The keychain is checked first; the env var is used only as a fallback (so a stale value in `.env` cannot mask a working keychain entry).
 
 ## Usage
 
@@ -211,6 +211,8 @@ Start the server:
 
 ```bash
 biolit-mcp
+# or pick a provider/model explicitly (overrides LLM_PROVIDER / LLM_MODEL env vars):
+biolit-mcp --provider openai --model gpt-4o-mini
 ```
 
 Or test interactively with the MCP inspector:
@@ -227,13 +229,14 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "biolit": {
-      "command": "biolit-mcp"
+      "command": "biolit-mcp",
+      "args": ["--provider", "openai"]
     }
   }
 }
 ```
 
-Restart Claude Desktop. The tools will appear in the tool picker.
+Restart Claude Desktop. The tools will appear in the tool picker. Drop `args` to use the default Anthropic provider (or set `LLM_PROVIDER` / `LLM_MODEL` env vars instead).
 
 ### Configure Claude CLI
 
@@ -243,7 +246,8 @@ Add a `.mcp.json` in your project root:
 {
   "mcpServers": {
     "biolit": {
-      "command": "biolit-mcp"
+      "command": "biolit-mcp",
+      "args": ["--provider", "openai"]
     }
   }
 }

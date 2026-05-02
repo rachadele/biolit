@@ -5,7 +5,13 @@ so any MCP-compatible client (Claude Desktop, OpenAI Agents SDK, etc.) can call
 them directly and orchestrate them as part of larger workflows.
 
 Usage:
-    biolit-mcp          # run as an MCP server (stdio transport)
+    biolit-mcp                                  # run as an MCP server (stdio transport)
+    biolit-mcp --provider openai                # override LLM_PROVIDER env var
+    biolit-mcp --provider openai --model gpt-4o-mini
+
+CLI flags (override the env vars below):
+    --provider          Provider to use (anthropic | openai | ollama)
+    --model             Model name (uses provider default if unset)
 
 Environment variables (same as the CLI):
     ANTHROPIC_API_KEY   Required for Anthropic provider (default)
@@ -15,6 +21,7 @@ Environment variables (same as the CLI):
     NCBI_API_KEY        Optional; raises NCBI rate limit from 3/s to 10/s
     UNPAYWALL_EMAIL     Used by fetch_fulltext if not passed as an argument
 """
+import argparse
 import os
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
@@ -42,11 +49,20 @@ load_dotenv(override=True)
 
 mcp = FastMCP("biolit")
 
-# Initialise one LLM client for the lifetime of the server process.
-# Override with LLM_PROVIDER / LLM_MODEL env vars.
+# Provider/model resolution: CLI flags (set in main()) override env vars.
+# The LLM client is lazily constructed on first LLM-touching tool call so that
+# the server still starts (and non-LLM tools still work) when the configured
+# provider's key isn't available.
 _provider = os.environ.get("LLM_PROVIDER", "anthropic")
 _model = os.environ.get("LLM_MODEL")
-_llm = get_llm_client(_provider, _model)
+_llm = None
+
+
+def _get_llm():
+    global _llm
+    if _llm is None:
+        _llm = get_llm_client(_provider, _model)
+    return _llm
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +198,7 @@ def screen_paper(
         "title": title,
         "mesh_terms": [t.strip() for t in mesh_terms.split(",") if t.strip()],
     }
-    return _screen_paper(_llm, paper, criterion, text)
+    return _screen_paper(_get_llm(), paper, criterion, text)
 
 
 @mcp.tool()
@@ -214,8 +230,9 @@ def extract_fields(
         "url": None,
         "text_source": "mcp",
     }
-    schema = build_output_schema(_llm, fields)
-    return _extract_fields(_llm, paper, schema, text)
+    llm = _get_llm()
+    schema = build_output_schema(llm, fields)
+    return _extract_fields(llm, paper, schema, text)
 
 
 @mcp.tool()
@@ -349,7 +366,7 @@ def run_pipeline(
     resolved_extraction_max_tokens = extraction_max_tokens or config.get("extraction_max_tokens") or 4096
     resolved_max_tokens = max_tokens or config.get("max_tokens") or DEFAULT_MAX_TOKENS
     csv_path, relevant_count = _run(
-        client=_llm,
+        client=_get_llm(),
         ids=id_list,
         criterion=resolved_criterion,
         fields_description=resolved_fields,
@@ -383,6 +400,15 @@ def read_pmids_from_eml(eml_path: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    global _provider, _model
+    parser = argparse.ArgumentParser(prog="biolit-mcp", description="biolit MCP server (stdio transport).")
+    parser.add_argument("--provider", help="LLM provider (anthropic|openai|ollama). Overrides LLM_PROVIDER.")
+    parser.add_argument("--model", help="Model name. Overrides LLM_MODEL.")
+    args = parser.parse_args()
+    if args.provider:
+        _provider = args.provider
+    if args.model:
+        _model = args.model
     mcp.run()
 
 
