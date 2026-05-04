@@ -356,6 +356,13 @@ export ZOTERO_PRIORITY=5.0          # lower = tried earlier (default 5.0)
 export ZOTERO_DATA_DIR=~/Zotero     # only needed if Zotero is not at ~/Zotero
 ```
 
+On macOS, any of `ZOTERO_API_KEY`, `ZOTERO_USER_ID`, and `ZOTERO_GROUP_ID`
+that are not in the environment fall back to the macOS keychain
+(`security find-generic-password -s <NAME> -w`), matching the resolution
+order used for LLM API keys. This means hosts like Claude Code that
+don't shell-source your profile can still pick up Zotero credentials
+without an `env` block in `.mcp.json`.
+
 **Local PDF directory.** Looks up papers by DOI in a pre-built JSON
 index. Filenames are arbitrary — DOIs are extracted from each PDF's
 `/Info` metadata dict and (failing that) its first-page text.

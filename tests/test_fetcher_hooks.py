@@ -388,6 +388,40 @@ def test_bibtex_fetcher_handles_missing_bib_file(tmp_path, capsys):
     assert "does not exist" in err
 
 
+def test_zotero_maybe_autoload_falls_back_to_keychain(monkeypatch):
+    """When env vars are unset, credentials come from the keychain helper."""
+    from biolit.fetchers import zotero as _zot
+
+    monkeypatch.delenv("ZOTERO_API_KEY", raising=False)
+    monkeypatch.delenv("ZOTERO_USER_ID", raising=False)
+    monkeypatch.delenv("ZOTERO_GROUP_ID", raising=False)
+
+    keychain = {"ZOTERO_API_KEY": "kc-key", "ZOTERO_USER_ID": "kc-user"}
+    monkeypatch.setattr(
+        "biolit.fetchers.zotero.resolve_api_key",
+        lambda name: keychain.get(name),
+    )
+
+    assert _zot.maybe_autoload() is True
+    fetchers = {name: fn for _, name, fn in registered_fetchers()}
+    assert "zotero" in fetchers
+    assert fetchers["zotero"].api_key == "kc-key"
+    assert fetchers["zotero"].user_id == "kc-user"
+
+
+def test_zotero_maybe_autoload_skips_when_neither_env_nor_keychain(monkeypatch):
+    from biolit.fetchers import zotero as _zot
+
+    monkeypatch.delenv("ZOTERO_API_KEY", raising=False)
+    monkeypatch.delenv("ZOTERO_USER_ID", raising=False)
+    monkeypatch.delenv("ZOTERO_GROUP_ID", raising=False)
+    monkeypatch.setattr("biolit.fetchers.zotero.resolve_api_key", lambda name: None)
+
+    assert _zot.maybe_autoload() is False
+    names = [name for _, name, _ in registered_fetchers()]
+    assert "zotero" not in names
+
+
 def test_bibtex_maybe_autoload_registers_when_env_set(tmp_path, monkeypatch):
     from biolit.fetchers import bibtex as _bib
 

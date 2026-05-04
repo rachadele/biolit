@@ -6,13 +6,15 @@ when the Zotero library has manually-added PDFs for papers that PMC /
 Europe PMC / Unpaywall don't have open-access copies of (typical for
 recent or paywalled work).
 
-Configuration is via environment variables — when ``ZOTERO_API_KEY`` and
-``ZOTERO_USER_ID`` are set, this fetcher is auto-registered with priority
-5 (i.e. tried before the PMC chain). A group library can be searched
-instead of (or in addition to) the user library by setting
-``ZOTERO_GROUP_ID``.
+Configuration: env vars take precedence; missing values fall back to the
+platform credential store used by biolit's LLM key resolution
+(``biolit.llm.base.resolve_api_key`` — macOS keychain via ``security
+find-generic-password -s <NAME> -w``; on non-darwin platforms only env
+vars are consulted). When ``ZOTERO_API_KEY`` and either ``ZOTERO_USER_ID``
+or ``ZOTERO_GROUP_ID`` resolve from any source, this fetcher is
+auto-registered with priority 5 (i.e. tried before the PMC chain).
 
-Required environment:
+Required (env or keychain):
 
 * ``ZOTERO_API_KEY`` — a Zotero web API key with read access.
 * Either ``ZOTERO_USER_ID`` or ``ZOTERO_GROUP_ID`` (or both).
@@ -30,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import requests
+
+from biolit.llm.base import resolve_api_key
 
 from ._hooks import FetchContext, FetchResult, register_fetcher
 
@@ -206,11 +210,31 @@ class ZoteroFetcher:
         return None
 
 
+def _resolve_zotero_credentials() -> tuple[str | None, str | None, str | None]:
+    """Return ``(api_key, user_id, group_id)`` from env vars with a keychain fallback.
+
+    Each value is resolved via :func:`biolit.llm.base.resolve_api_key`, which
+    checks the macOS keychain first and falls back to the env var. On
+    non-darwin platforms the keychain step is skipped and only the env var
+    is consulted. The helper is silent on missing tools or non-zero
+    ``security`` exits — failures degrade to ``None`` rather than raising.
+    """
+    return (
+        resolve_api_key("ZOTERO_API_KEY"),
+        resolve_api_key("ZOTERO_USER_ID"),
+        resolve_api_key("ZOTERO_GROUP_ID"),
+    )
+
+
 def maybe_autoload() -> bool:
-    """Register ``ZoteroFetcher`` from env vars. Returns True if registered."""
-    api_key = os.environ.get("ZOTERO_API_KEY")
-    user_id = os.environ.get("ZOTERO_USER_ID")
-    group_id = os.environ.get("ZOTERO_GROUP_ID")
+    """Register ``ZoteroFetcher`` if credentials are available. Returns True if registered.
+
+    Credentials are resolved by :func:`_resolve_zotero_credentials` (env vars
+    first, then the platform credential store), so callers running outside a
+    shell that exports ``ZOTERO_*`` (e.g. an MCP host) can still pick up
+    keys stored in the macOS keychain.
+    """
+    api_key, user_id, group_id = _resolve_zotero_credentials()
     if not api_key or not (user_id or group_id):
         return False
     priority = float(os.environ.get("ZOTERO_PRIORITY", "5.0"))
