@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "biolit"
-version = "0.1.29"
+version = "0.1.30"
 description = "LLM-assisted biomedical literature screening and structured extraction for PubMed and GEO."
 readme = "README.md"
 license = "MIT"

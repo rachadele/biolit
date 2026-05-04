@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.30] — 2026-05-04
+
+### Added
+- **`sections` parameter on the `run_pipeline` MCP tool** — mirrors the CLI's `--sections` flag so MCP callers can restrict which full-text sections (e.g. `"methods,results"`) are sent to the LLM. Comma-separated string; falls back to the `sections` key in `config_path` when omitted; defaults to all sections.
+
 ## [0.1.29] — 2026-05-01
 
 ### Added

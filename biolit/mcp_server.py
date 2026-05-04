@@ -284,6 +284,7 @@ def run_pipeline(
     markdown_max_tokens: int = 0,
     extraction_max_tokens: int = 0,
     max_tokens: int = 0,
+    sections: str = "",
     bib_path: str = "",
     ids_file: str = "",
 ) -> dict:
@@ -311,7 +312,8 @@ def run_pipeline(
         unpaywall_email: Email for the Unpaywall API.
             Falls back to config_path value, then UNPAYWALL_EMAIL env var.
         config_path: Path to a JSON config file. Supported keys: ids, criterion, fields,
-            output, unpaywall_email, markdown, markdown_max_tokens, extraction_max_tokens, max_tokens. Explicit arguments take precedence.
+            sections, output, unpaywall_email, markdown, markdown_max_tokens,
+            extraction_max_tokens, max_tokens. Explicit arguments take precedence.
         markdown: If True, also write a results.md markdown summary alongside the CSV.
         markdown_max_tokens: Maximum tokens for each markdown section LLM call (default: 1024).
             Pass 0 to use the default.
@@ -319,6 +321,9 @@ def run_pipeline(
             Pass 0 to use the default.
         max_tokens: Maximum tokens of paper text sent to the LLM (default: 12500).
             Pass 0 to use the default.
+        sections: Comma-separated section names to include when full text is available,
+            e.g. "methods,results". Leave empty to use all sections or the value from
+            config_path. Overrides config_path value.
         bib_path: Path to a BibTeX (.bib) file. DOIs are extracted from doi={...} fields.
             Used when ids is empty. Takes precedence over ids_file.
         ids_file: Path to a plain-text file of identifiers (one per line, mixed types OK).
@@ -365,6 +370,12 @@ def run_pipeline(
     resolved_markdown_max_tokens = markdown_max_tokens or config.get("markdown_max_tokens") or 1024
     resolved_extraction_max_tokens = extraction_max_tokens or config.get("extraction_max_tokens") or 4096
     resolved_max_tokens = max_tokens or config.get("max_tokens") or DEFAULT_MAX_TOKENS
+    sections_str = sections or config.get("sections") or ""
+    resolved_sections = (
+        [s.strip() for s in sections_str.split(",") if s.strip()]
+        if sections_str
+        else None
+    )
     csv_path, relevant_count = _run(
         client=_get_llm(),
         ids=id_list,
@@ -372,6 +383,7 @@ def run_pipeline(
         fields_description=resolved_fields,
         output_path=resolved_output,
         unpaywall_email=resolved_email,
+        sections_wanted=resolved_sections,
         markdown=resolved_markdown,
         markdown_max_tokens=resolved_markdown_max_tokens,
         extraction_max_tokens=resolved_extraction_max_tokens,
