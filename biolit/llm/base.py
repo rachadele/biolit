@@ -40,6 +40,16 @@ class BaseLLMClient(ABC):
         """Send *messages* (OpenAI-style list of dicts) and return the reply text."""
         ...
 
+    def chat_batch(self, messages_list: list[list[dict]], max_tokens: int = 512) -> list[str]:
+        """Send multiple independent message lists and return a reply for each.
+
+        Default implementation falls back to sequential ``chat()`` calls.
+        Subclasses that support a native batch API should override this to
+        reduce cost and latency.  Results are returned in the same order as
+        *messages_list*; failed requests return an empty string.
+        """
+        return [self.chat(messages, max_tokens) for messages in messages_list]
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(model={self.model!r})"
 
