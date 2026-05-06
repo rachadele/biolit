@@ -74,6 +74,13 @@ biolit refs.bib --config my_config.json --markdown
 biolit refs.bib --config my_config.json --markdown --markdown-max-tokens 2048
 ```
 
+Add `--batch` to issue screening, extraction, and markdown rendering through the provider's Message Batches / Batch API instead of one call per record. Per-request cost drops by ~50%, but each batch blocks on completion (typically several minutes per stage; up to 6 hours), so it's intended for the bulk weekly-alert case rather than one-off lookups. Anthropic and OpenAI only — falls back to sequential calls on Ollama or on OpenAI-compatible endpoints with a custom `base_url`. Also accepted as `"batch": true` in a config file.
+
+```bash
+biolit docs/alert.eml --default --batch
+biolit docs/alert.eml --default --batch --markdown   # batches markdown too
+```
+
 Or use a JSON config file to store reusable parameters (CLI flags take precedence). The config can include `ids` or `input_file` (path to an `.eml`, `.bib`, or identifier list), and `"markdown": true` to enable markdown output:
 
 ```bash
@@ -259,7 +266,7 @@ Add a `.mcp.json` in your project root:
 
 | Tool | Description |
 |---|---|
-| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). Pass `sections` (comma-separated, e.g. `"methods,results"`) to restrict which full-text sections reach the LLM. Use `max_tokens` to cap input text (default 12500), `extraction_max_tokens` for field extraction output (default 4096), and `markdown_max_tokens` for markdown rendering (default 1024). Pass `0` for any token param to use the default. All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
+| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). Pass `sections` (comma-separated, e.g. `"methods,results"`) to restrict which full-text sections reach the LLM. Use `max_tokens` to cap input text (default 12500), `extraction_max_tokens` for field extraction output (default 4096), and `markdown_max_tokens` for markdown rendering (default 1024). Pass `0` for any token param to use the default. Pass `batch=True` to run screening, extraction, and markdown rendering through the provider's batch API (~50% cheaper, blocks until completion). All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
 
 **Low-level** (for custom workflows):
 
