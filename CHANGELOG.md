@@ -2,6 +2,16 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.31] — 2026-05-04
+
+### Changed
+- **Zotero credentials fall back to the macOS keychain** — `ZOTERO_API_KEY`, `ZOTERO_USER_ID`, and `ZOTERO_GROUP_ID` are now resolved via `biolit.llm.base.resolve_api_key`, mirroring the behavior added for LLM keys in 0.1.28/0.1.29. When biolit-mcp is launched from an MCP host that doesn't shell-source the user's profile, the Zotero hook now still auto-registers as long as the credentials are stored in the keychain (`security add-generic-password -s ZOTERO_API_KEY -w …`). On non-darwin platforms, only env vars are consulted (unchanged). Silent fall-through is preserved when the `security` binary is missing or returns non-zero, so CI environments are unaffected.
+
+## [0.1.30] — 2026-05-04
+
+### Added
+- **`sections` parameter on the `run_pipeline` MCP tool** — mirrors the CLI's `--sections` flag so MCP callers can restrict which full-text sections (e.g. `"methods,results"`) are sent to the LLM. Comma-separated string; falls back to the `sections` key in `config_path` when omitted; defaults to all sections.
+
 ## [0.1.29] — 2026-05-01
 
 ### Added

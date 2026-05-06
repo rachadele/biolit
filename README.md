@@ -259,7 +259,7 @@ Add a `.mcp.json` in your project root:
 
 | Tool | Description |
 |---|---|
-| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). Use `max_tokens` to cap input text (default 12500), `extraction_max_tokens` for field extraction output (default 4096), and `markdown_max_tokens` for markdown rendering (default 1024). Pass `0` for any token param to use the default. All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
+| `run_pipeline` | Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and/or GEO accessions; write results CSV (and optionally a `.md` summary when `markdown=True`). Accepts `ids` (comma-separated), `bib_path` (`.bib` file), or `ids_file` (plain-text identifier file). Pass `sections` (comma-separated, e.g. `"methods,results"`) to restrict which full-text sections reach the LLM. Use `max_tokens` to cap input text (default 12500), `extraction_max_tokens` for field extraction output (default 4096), and `markdown_max_tokens` for markdown rendering (default 1024). Pass `0` for any token param to use the default. All parameters optional — pass only `config_path` to drive the entire run from a JSON file. |
 
 **Low-level** (for custom workflows):
 
@@ -355,6 +355,13 @@ export ZOTERO_USER_ID=...           # or ZOTERO_GROUP_ID for a group library
 export ZOTERO_PRIORITY=5.0          # lower = tried earlier (default 5.0)
 export ZOTERO_DATA_DIR=~/Zotero     # only needed if Zotero is not at ~/Zotero
 ```
+
+On macOS, any of `ZOTERO_API_KEY`, `ZOTERO_USER_ID`, and `ZOTERO_GROUP_ID`
+that are not in the environment fall back to the macOS keychain
+(`security find-generic-password -s <NAME> -w`), matching the resolution
+order used for LLM API keys. This means hosts like Claude Code that
+don't shell-source your profile can still pick up Zotero credentials
+without an `env` block in `.mcp.json`.
 
 **Local PDF directory.** Looks up papers by DOI in a pre-built JSON
 index. Filenames are arbitrary — DOIs are extracted from each PDF's
