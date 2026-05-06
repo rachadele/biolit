@@ -2,6 +2,15 @@
 
 All notable changes to `biolit` are documented here.
 
+## [Unreleased]
+
+### Added
+- **Provider-side batch APIs for screening, extraction, and markdown** — new `chat_batch()` method on the LLM client base class, with native overrides for Anthropic Message Batches and OpenAI Batches (~50% cheaper per request). Falls back to sequential `chat()` calls on Ollama and on OpenAI-compatible endpoints with a custom `base_url`. The Anthropic `chat()` path was refactored to share a `_messages_kwargs` helper with the batch path so the system-prompt handling is identical. Failed/expired individual requests within a batch return an empty string; both clients block on completion (6-hour timeout) with exponential-backoff polling.
+- **`--batch` flag on the CLI** and **`batch` parameter on the `run_pipeline` MCP tool** wire `chat_batch()` into the pipeline. When enabled, screening, field extraction, and markdown rendering each issue a single batch call instead of N sequential calls. Fetch and full-text resolution remain sequential (network-bound, not LLM-bound). Also accepted as `"batch": true` in the JSON config file. A warning prints when the flag is set with a single-record run, since the batch-API queue overhead doesn't pay off at n=1.
+
+### Changed
+- **`pipeline.run()` refactor** — the per-record loop is now split between `_run_sequential_loop` (the existing path, byte-equivalent behavior) and `_run_batch_loop` (the batch path). Shared helpers `_fetch_and_resolve_all`, `_persist_record_artifacts`, `_build_metadata_only_result`, and `_lookup_pmid_for_citations` ensure both loops emit identical CSV rows and artifact directories. Pure prompt-builder helpers (`_screen_prompt`, `_extract_prompt`, `_markdown_body_prompt`) are reused across paths so the LLM sees the same prompts in both modes.
+
 ## [0.1.31] — 2026-05-04
 
 ### Changed

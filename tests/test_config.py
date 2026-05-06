@@ -95,7 +95,7 @@ class TestLoadConfig:
         expected = {
             "ids", "input_file", "criterion", "fields", "provider", "model",
             "sections", "max_tokens", "unpaywall_email", "output", "markdown",
-            "markdown_max_tokens", "extraction_max_tokens",
+            "markdown_max_tokens", "extraction_max_tokens", "batch",
         }
         assert VALID_KEYS == expected
 

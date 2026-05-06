@@ -15,6 +15,7 @@ VALID_KEYS = {
     "markdown",
     "markdown_max_tokens",
     "extraction_max_tokens",
+    "batch",
 }
 
 

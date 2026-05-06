@@ -48,9 +48,8 @@ def build_output_schema(client: BaseLLMClient, fields_description: str | dict) -
     return parse_json_response(response)
 
 
-def screen_paper(client: BaseLLMClient, paper: dict, criterion: str, text: str) -> dict:
-    """Ask the LLM whether *paper* meets *criterion* given *text* as evidence."""
-    prompt = (
+def _screen_prompt(paper: dict, criterion: str, text: str) -> str:
+    return (
         f"You are screening a scientific paper for relevance to a literature review.\n\n"
         f"Criterion: {criterion}\n\n"
         f"Title: {paper['title']}\n"
@@ -59,17 +58,20 @@ def screen_paper(client: BaseLLMClient, paper: dict, criterion: str, text: str) 
         f"Respond with valid JSON only, no other text:\n"
         f'{{"relevant": true or false, "reason": "one sentence"}}'
     )
+
+
+def screen_paper(client: BaseLLMClient, paper: dict, criterion: str, text: str) -> dict:
+    """Ask the LLM whether *paper* meets *criterion* given *text* as evidence."""
     response = client.chat(
-        [{"role": "user", "content": prompt}],
+        [{"role": "user", "content": _screen_prompt(paper, criterion, text)}],
         max_tokens=256,
     )
     return parse_json_response(response)
 
 
-def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text: str, extraction_max_tokens: int = 4096) -> dict:
-    """Extract structured fields from *paper* using the LLM."""
+def _extract_prompt(paper: dict, output_schema: dict, text: str) -> str:
     schema_str = json.dumps(output_schema, indent=2)
-    prompt = (
+    return (
         f"Extract structured information from this paper.\n"
         f"Use only what is stated in the paper content — do not speculate.\n\n"
         f"Title: {paper['title']}\n"
@@ -79,11 +81,9 @@ def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text
         f"Fields to extract:\n{schema_str}\n\n"
         f"Return a JSON object with exactly those keys. Use null for fields not determinable."
     )
-    response = client.chat(
-        [{"role": "user", "content": prompt}],
-        max_tokens=extraction_max_tokens,
-    )
-    result = parse_json_response(response)
+
+
+def _attach_paper_metadata(result: dict, paper: dict) -> dict:
     result["title"] = paper["title"]
     result["authors"] = paper.get("authors")
     result["url"] = paper.get("url")
@@ -92,6 +92,16 @@ def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text
     result["geo_accession"] = paper.get("geo_accession")
     result["text_source"] = paper.get("text_source", "abstract")
     return result
+
+
+def extract_fields(client: BaseLLMClient, paper: dict, output_schema: dict, text: str, extraction_max_tokens: int = 4096) -> dict:
+    """Extract structured fields from *paper* using the LLM."""
+    response = client.chat(
+        [{"role": "user", "content": _extract_prompt(paper, output_schema, text)}],
+        max_tokens=extraction_max_tokens,
+    )
+    result = parse_json_response(response)
+    return _attach_paper_metadata(result, paper)
 
 
 # ---------------------------------------------------------------------------
@@ -104,19 +114,7 @@ _MARKDOWN_META_KEYS = frozenset({
 })
 
 
-def format_record_markdown(
-    client: BaseLLMClient,
-    record: dict,
-    output_schema: dict | None,
-    markdown_max_tokens: int = 1024,
-) -> str:
-    """Render a single record as a markdown section.
-
-    Stub records (``_stub=True``) get a minimal header + failure note with no
-    LLM call. Normal records get an LLM-generated prose section that is aware
-    of the full output schema (field names and descriptions) so it can adapt
-    its tone and gracefully omit null fields.
-    """
+def _markdown_header(record: dict) -> str:
     title = record.get("title") or "Unknown"
     url = record.get("url", "")
     pmid = record.get("pmid")
@@ -124,10 +122,8 @@ def format_record_markdown(
     geo = record.get("geo_accession")
     text_source = record.get("text_source", "")
     citations = record.get("citation_count")
-
     authors = record.get("authors")
 
-    # Build metadata header lines
     meta_lines = []
     if authors:
         meta_lines.append(f"**Authors:** {authors}")
@@ -144,29 +140,20 @@ def format_record_markdown(
     if citations is not None:
         meta_lines.append(f"**Citations:** {citations}")
 
-    header = f"## {title}\n" + "\n".join(meta_lines)
+    return f"## {title}\n" + "\n".join(meta_lines)
 
-    # Stub: no LLM call needed
-    if record.get("_stub"):
-        reason = record.get("_stub_reason", "unknown error")
-        return f"{header}\n\n_Record could not be fully processed: {reason}._\n"
 
-    # Metadata-only run (no extraction schema): no LLM call needed
-    if not output_schema:
-        return f"{header}\n"
-
-    # Full LLM render: pass schema + extracted values so the model has context
+def _markdown_body_prompt(record: dict, output_schema: dict) -> str:
     extracted = {k: v for k, v in record.items() if k not in _MARKDOWN_META_KEYS}
     schema_str = json.dumps(output_schema, indent=2)
     extracted_str = json.dumps(extracted, indent=2)
-
-    prompt = (
+    return (
         "You are writing a structured markdown summary section for an academic literature review.\n\n"
         f"Paper metadata:\n"
-        f"  Title: {title}\n"
-        f"  PMID: {pmid}\n"
-        f"  DOI: {doi}\n"
-        f"  Text source: {text_source}\n\n"
+        f"  Title: {record.get('title') or 'Unknown'}\n"
+        f"  PMID: {record.get('pmid')}\n"
+        f"  DOI: {record.get('doi')}\n"
+        f"  Text source: {record.get('text_source', '')}\n\n"
         f"Field schema (what each field means):\n{schema_str}\n\n"
         f"Extracted field values:\n{extracted_str}\n\n"
         "Write the body of the markdown section for this paper. Rules:\n"
@@ -177,7 +164,35 @@ def format_record_markdown(
         "- Keep each subsection concise (1-3 sentences)\n"
         "- Do not add any preamble or closing remarks"
     )
-    body = client.chat([{"role": "user", "content": prompt}], max_tokens=markdown_max_tokens)
+
+
+def _stub_markdown(record: dict) -> str:
+    reason = record.get("_stub_reason", "unknown error")
+    return f"{_markdown_header(record)}\n\n_Record could not be fully processed: {reason}._\n"
+
+
+def format_record_markdown(
+    client: BaseLLMClient,
+    record: dict,
+    output_schema: dict | None,
+    markdown_max_tokens: int = 1024,
+) -> str:
+    """Render a single record as a markdown section.
+
+    Stub records (``_stub=True``) get a minimal header + failure note with no
+    LLM call. Normal records get an LLM-generated prose section that is aware
+    of the full output schema (field names and descriptions) so it can adapt
+    its tone and gracefully omit null fields.
+    """
+    if record.get("_stub"):
+        return _stub_markdown(record)
+    header = _markdown_header(record)
+    if not output_schema:
+        return f"{header}\n"
+    body = client.chat(
+        [{"role": "user", "content": _markdown_body_prompt(record, output_schema)}],
+        max_tokens=markdown_max_tokens,
+    )
     return f"{header}\n\n{body}\n"
 
 
@@ -191,6 +206,48 @@ def generate_markdown_summary(
     sections = ["# Literature Search Results\n"]
     for record in records:
         sections.append(format_record_markdown(client, record, output_schema, markdown_max_tokens))
+    return "\n---\n\n".join(sections)
+
+
+def generate_markdown_summary_batch(
+    client: BaseLLMClient,
+    records: list[dict],
+    output_schema: dict | None,
+    markdown_max_tokens: int = 1024,
+) -> str:
+    """Like :func:`generate_markdown_summary` but uses a single batch LLM call.
+
+    Stubs and metadata-only records skip the LLM (same as the sequential path).
+    Records whose batch slot returns an empty response fall back to a stub
+    rendering so the document remains complete.
+    """
+    needs_llm_idx = [
+        i for i, r in enumerate(records)
+        if not r.get("_stub") and output_schema
+    ]
+    bodies: list[str] = []
+    if needs_llm_idx:
+        prompts = [
+            [{"role": "user", "content": _markdown_body_prompt(records[i], output_schema)}]
+            for i in needs_llm_idx
+        ]
+        bodies = client.chat_batch(prompts, max_tokens=markdown_max_tokens)
+
+    body_by_idx = dict(zip(needs_llm_idx, bodies))
+    sections = ["# Literature Search Results\n"]
+    for i, record in enumerate(records):
+        if record.get("_stub"):
+            sections.append(_stub_markdown(record))
+            continue
+        header = _markdown_header(record)
+        if not output_schema:
+            sections.append(f"{header}\n")
+            continue
+        body = body_by_idx.get(i, "")
+        if not body:
+            sections.append(f"{header}\n\n_Markdown rendering failed in batch._\n")
+        else:
+            sections.append(f"{header}\n\n{body}\n")
     return "\n---\n\n".join(sections)
 
 
@@ -528,6 +585,291 @@ def _resolve_geo_fulltext(
 # Main unified pipeline
 # ---------------------------------------------------------------------------
 
+def _make_stub(reason: str, paper: dict | None = None, id_str: str = "") -> dict:
+    """Build a stub entry for the markdown from a paper dict or bare id_str."""
+    return {
+        "title": (paper.get("title") if paper else None) or id_str,
+        "url": paper.get("url") if paper else None,
+        "pmid": paper.get("pmid") if paper else None,
+        "doi": paper.get("doi") if paper else None,
+        "geo_accession": paper.get("geo_accession") if paper else None,
+        "text_source": paper.get("text_source") if paper else None,
+        "_stub": True,
+        "_stub_reason": reason,
+    }
+
+
+def _persist_record_artifacts(
+    paper: dict, text: str, source: str, fulltext_artifacts: dict,
+    artifacts_root: str, id_str: str,
+) -> None:
+    slug_id = paper.get("geo_accession") or paper.get("pmid") or id_str
+    paper_slug = f"{slug_id}_{_safe_name(paper.get('title', 'paper'))}"
+    paper_dir = os.path.join(artifacts_root, paper_slug)
+    os.makedirs(paper_dir, exist_ok=True)
+    _write_text(os.path.join(paper_dir, "selected_text.txt"), text)
+    _write_text(
+        os.path.join(paper_dir, "metadata.json"),
+        json.dumps(
+            {
+                "pmid": paper.get("pmid"),
+                "doi": paper.get("doi"),
+                "geo_accession": paper.get("geo_accession"),
+                "title": paper.get("title"),
+                "url": paper.get("url"),
+                "mesh_terms": paper.get("mesh_terms", []),
+                "text_source": source,
+            },
+            indent=2,
+        ),
+    )
+    _write_bytes(os.path.join(paper_dir, "pmc_fulltext.xml"), fulltext_artifacts.get("pmc_xml"))
+    _write_bytes(os.path.join(paper_dir, "europepmc_fulltext.xml"), fulltext_artifacts.get("europepmc_xml"))
+    _write_bytes(os.path.join(paper_dir, "preprint_fulltext.xml"), fulltext_artifacts.get("preprint_xml"))
+    _write_bytes(os.path.join(paper_dir, "unpaywall_fulltext.pdf"), fulltext_artifacts.get("unpaywall_pdf"))
+    _write_bytes(os.path.join(paper_dir, "s2_fulltext.pdf"), fulltext_artifacts.get("s2_pdf"))
+
+
+def _lookup_pmid_for_citations(paper: dict, id_type: str) -> str | None:
+    pmid = paper.get("pmid")
+    if pmid:
+        return pmid
+    if id_type == "geo":
+        linked = paper.get("pmids", [])
+        return linked[0] if linked else None
+    return None
+
+
+def _build_metadata_only_result(paper: dict, source: str, id_type: str) -> dict:
+    lookup_pmid = _lookup_pmid_for_citations(paper, id_type)
+    result = {
+        "title": paper.get("title"),
+        "authors": paper.get("authors"),
+        "url": paper.get("url"),
+        "pmid": paper.get("pmid"),
+        "doi": paper.get("doi"),
+        "geo_accession": paper.get("geo_accession"),
+        "text_source": source,
+        "citation_count": get_citation_count(doi=paper.get("doi"), pmid=lookup_pmid),
+    }
+    if id_type == "geo":
+        result["linked_pmids"] = ", ".join(paper.get("pmids", []))
+    return result
+
+
+def _fetch_and_resolve_all(
+    ids: list[str],
+    artifacts_root: str,
+    unpaywall_email: str | None,
+    sections_wanted: list[str] | None,
+    max_tokens: int,
+) -> tuple[list[dict], list[dict]]:
+    """Fetch metadata, resolve full text, and persist artifacts for each id.
+
+    Returns ``(prepared, stubs)`` where each item in *prepared* is a dict with
+    keys ``id_str``, ``id_type``, ``paper``, ``text``, ``source`` ready for the
+    LLM stages.  Failures (missing record / no content) go into *stubs*.
+    """
+    prepared: list[dict] = []
+    stubs: list[dict] = []
+
+    for i, id_str in enumerate(ids, 1):
+        id_type = _detect_id_type(id_str)
+        print(f"[{i}/{len(ids)}] {id_str}", end=" ... ", flush=True, file=sys.stderr)
+
+        try:
+            paper = fetch_record(id_str)
+        except Exception as e:
+            print(f"fetch error: {e}", file=sys.stderr)
+            stubs.append(_make_stub(f"fetch error: {e}", id_str=id_str))
+            continue
+
+        if not paper:
+            print("skipped (not found)", file=sys.stderr)
+            stubs.append(_make_stub("record not found", id_str=id_str))
+            continue
+
+        print("resolving full text...", end=" ", flush=True, file=sys.stderr)
+        if id_type == "geo":
+            text, source, ftarts = _resolve_geo_fulltext(
+                paper, unpaywall_email, sections_wanted, max_tokens
+            )
+        else:
+            text, source, ftarts = resolve_fulltext(
+                paper, unpaywall_email, sections_wanted, max_tokens
+            )
+        paper["text_source"] = source
+        _persist_record_artifacts(paper, text, source, ftarts, artifacts_root, id_str)
+
+        if not text:
+            print("skipped (no content)", file=sys.stderr)
+            stubs.append(_make_stub("no content retrievable", paper=paper))
+            continue
+
+        print(f"[{source}]", file=sys.stderr)
+        prepared.append({
+            "id_str": id_str, "id_type": id_type,
+            "paper": paper, "text": text, "source": source,
+        })
+
+    return prepared, stubs
+
+
+def _run_batch_loop(
+    client: BaseLLMClient,
+    ids: list[str],
+    criterion: str | None,
+    output_schema: dict | None,
+    artifacts_root: str,
+    unpaywall_email: str | None,
+    sections_wanted: list[str] | None,
+    max_tokens: int,
+    extraction_max_tokens: int,
+) -> tuple[list[dict], list[dict]]:
+    """Batch variant: fetch all records first, then batch screen + extract."""
+    prepared, stubs = _fetch_and_resolve_all(
+        ids, artifacts_root, unpaywall_email, sections_wanted, max_tokens
+    )
+
+    if criterion and prepared:
+        print(f"\nBatch screening {len(prepared)} records...", file=sys.stderr)
+        prompts = [
+            [{"role": "user", "content": _screen_prompt(p["paper"], criterion, p["text"])}]
+            for p in prepared
+        ]
+        responses = client.chat_batch(prompts, max_tokens=256)
+        kept = []
+        for p, response in zip(prepared, responses):
+            if not response:
+                stubs.append(_make_stub("screening error: empty batch response", paper=p["paper"]))
+                continue
+            try:
+                screening = parse_json_response(response)
+            except Exception as e:
+                stubs.append(_make_stub(f"screening error: {e}", paper=p["paper"]))
+                continue
+            if screening.get("relevant"):
+                print(f"  ✓ {p['id_str']} relevant [{p['source']}]", file=sys.stderr)
+                kept.append(p)
+            else:
+                print(f"  ✗ {p['id_str']} not relevant ({screening.get('reason', '')})", file=sys.stderr)
+        prepared = kept
+
+    results: list[dict] = []
+    if not prepared:
+        return results, stubs
+
+    if output_schema:
+        print(f"\nBatch extracting fields from {len(prepared)} records...", file=sys.stderr)
+        prompts = [
+            [{"role": "user", "content": _extract_prompt(p["paper"], output_schema, p["text"])}]
+            for p in prepared
+        ]
+        responses = client.chat_batch(prompts, max_tokens=extraction_max_tokens)
+        for p, response in zip(prepared, responses):
+            paper, id_type = p["paper"], p["id_type"]
+            if not response:
+                stubs.append(_make_stub("extraction error: empty batch response", paper=paper))
+                continue
+            try:
+                result = parse_json_response(response)
+                _attach_paper_metadata(result, paper)
+            except Exception as e:
+                stubs.append(_make_stub(f"extraction error: {e}", paper=paper))
+                continue
+            lookup_pmid = _lookup_pmid_for_citations(paper, id_type)
+            result["citation_count"] = get_citation_count(doi=paper.get("doi"), pmid=lookup_pmid)
+            if id_type == "geo":
+                result["linked_pmids"] = ", ".join(paper.get("pmids", []))
+            results.append(result)
+    else:
+        for p in prepared:
+            results.append(_build_metadata_only_result(p["paper"], p["source"], p["id_type"]))
+
+    return results, stubs
+
+
+def _run_sequential_loop(
+    client: BaseLLMClient,
+    ids: list[str],
+    criterion: str | None,
+    output_schema: dict | None,
+    artifacts_root: str,
+    unpaywall_email: str | None,
+    sections_wanted: list[str] | None,
+    max_tokens: int,
+    extraction_max_tokens: int,
+) -> tuple[list[dict], list[dict]]:
+    """Sequential variant: per-record fetch → screen → extract, one at a time."""
+    results: list[dict] = []
+    stubs: list[dict] = []
+
+    for i, id_str in enumerate(ids, 1):
+        id_type = _detect_id_type(id_str)
+        print(f"[{i}/{len(ids)}] {id_str}", end=" ... ", flush=True, file=sys.stderr)
+
+        try:
+            paper = fetch_record(id_str)
+        except Exception as e:
+            print(f"fetch error: {e}", file=sys.stderr)
+            stubs.append(_make_stub(f"fetch error: {e}", id_str=id_str))
+            continue
+
+        if not paper:
+            print("skipped (not found)", file=sys.stderr)
+            stubs.append(_make_stub("record not found", id_str=id_str))
+            continue
+
+        print("resolving full text...", end=" ", flush=True, file=sys.stderr)
+        if id_type == "geo":
+            text, source, ftarts = _resolve_geo_fulltext(
+                paper, unpaywall_email, sections_wanted, max_tokens
+            )
+        else:
+            text, source, ftarts = resolve_fulltext(
+                paper, unpaywall_email, sections_wanted, max_tokens
+            )
+        paper["text_source"] = source
+        _persist_record_artifacts(paper, text, source, ftarts, artifacts_root, id_str)
+
+        if not text:
+            print("skipped (no content)", file=sys.stderr)
+            stubs.append(_make_stub("no content retrievable", paper=paper))
+            continue
+
+        if criterion:
+            try:
+                screening = screen_paper(client, paper, criterion, text)
+            except Exception as e:
+                print(f"screening error: {e}", file=sys.stderr)
+                stubs.append(_make_stub(f"screening error: {e}", paper=paper))
+                continue
+            if not screening.get("relevant"):
+                print(f"not relevant ({screening.get('reason', '')})", file=sys.stderr)
+                continue
+            print(f"relevant [{source}]", end="", file=sys.stderr)
+        else:
+            print(f"[{source}]", end="", file=sys.stderr)
+
+        if output_schema:
+            print(" — extracting fields", file=sys.stderr)
+            try:
+                result = extract_fields(client, paper, output_schema, text, extraction_max_tokens)
+                lookup_pmid = _lookup_pmid_for_citations(paper, id_type)
+                result["citation_count"] = get_citation_count(doi=paper.get("doi"), pmid=lookup_pmid)
+                if id_type == "geo":
+                    result["linked_pmids"] = ", ".join(paper.get("pmids", []))
+                results.append(result)
+            except Exception as e:
+                print(f"  extraction error: {e}", file=sys.stderr)
+                stubs.append(_make_stub(f"extraction error: {e}", paper=paper))
+        else:
+            print("", file=sys.stderr)
+            results.append(_build_metadata_only_result(paper, source, id_type))
+
+    return results, stubs
+
+
 def run(
     client: BaseLLMClient,
     ids: list[str],
@@ -540,6 +882,7 @@ def run(
     markdown: bool = False,
     markdown_max_tokens: int = 1024,
     extraction_max_tokens: int = 4096,
+    batch: bool = False,
 ) -> tuple[str | None, int]:
     """Fetch, optionally screen, and optionally extract a mixed list of PMIDs, DOIs, and GEO accessions.
 
@@ -550,6 +893,9 @@ def run(
     - If *fields_description* is None, the extraction step is skipped and only metadata columns
       (title, url, pmid, doi, geo_accession, text_source, citation_count) are written.
     - The output CSV always includes pmid, doi, and geo_accession columns.
+    - When *batch* is True, screening, extraction, and markdown rendering each
+      use a single batch LLM call (Anthropic Message Batches / OpenAI Batch API,
+      ~50% cheaper). Fetch + full-text resolution remain sequential.
     """
     output_schema: dict | None = None
     if fields_description:
@@ -557,149 +903,35 @@ def run(
         output_schema = build_output_schema(client, fields_description)
         print(f"  Fields: {', '.join(output_schema.keys())}\n", file=sys.stderr)
 
-    print(f"Processing {len(ids)} identifiers\n", file=sys.stderr)
+    print(f"Processing {len(ids)} identifiers{' (batch mode)' if batch else ''}\n", file=sys.stderr)
+
+    if batch and len(ids) == 1:
+        print(
+            "  [warning] batch mode with a single record pays the full batch-API "
+            "queue overhead (typically several minutes per stage) for ~50% cost "
+            "savings on one call. Consider running without --batch.\n",
+            file=sys.stderr,
+        )
 
     run_dir, csv_path = _make_run_dir(output_path)
     artifacts_root = os.path.join(run_dir, "artifacts")
     os.makedirs(artifacts_root, exist_ok=True)
     print(f"Run directory: {run_dir}\n", file=sys.stderr)
 
-    results = []
-    stubs: list[dict] = []  # skipped/failed records; markdown-only, not written to CSV
+    loop = _run_batch_loop if batch else _run_sequential_loop
+    results, stubs = loop(
+        client, ids, criterion, output_schema, artifacts_root,
+        unpaywall_email, sections_wanted, max_tokens, extraction_max_tokens,
+    )
 
-    def _stub(reason: str, paper: dict | None = None, id_str: str = "") -> dict:
-        """Build a stub entry for the markdown from a paper dict or bare id_str."""
-        return {
-            "title": (paper.get("title") if paper else None) or id_str,
-            "url": paper.get("url") if paper else None,
-            "pmid": paper.get("pmid") if paper else None,
-            "doi": paper.get("doi") if paper else None,
-            "geo_accession": paper.get("geo_accession") if paper else None,
-            "text_source": paper.get("text_source") if paper else None,
-            "_stub": True,
-            "_stub_reason": reason,
-        }
-
-    for i, id_str in enumerate(ids, 1):
-        id_type = _detect_id_type(id_str)
-        print(f"[{i}/{len(ids)}] {id_str}", end=" ... ", flush=True, file=sys.stderr)
-
-        try:
-            paper = fetch_record(id_str)
-        except Exception as e:
-            print(f"fetch error: {e}", file=sys.stderr)
-            stubs.append(_stub(f"fetch error: {e}", id_str=id_str))
-            continue
-
-        if not paper:
-            print("skipped (not found)", file=sys.stderr)
-            stubs.append(_stub("record not found", id_str=id_str))
-            continue
-
-        print("resolving full text...", end=" ", flush=True, file=sys.stderr)
-        if id_type == "geo":
-            text, source, fulltext_artifacts = _resolve_geo_fulltext(
-                paper, unpaywall_email, sections_wanted, max_tokens
-            )
-        else:
-            text, source, fulltext_artifacts = resolve_fulltext(
-                paper, unpaywall_email, sections_wanted, max_tokens
-            )
-        paper["text_source"] = source
-
-        # Persist artifacts so the run is reproducible and inspectable.
-        slug_id = paper.get("geo_accession") or paper.get("pmid") or id_str
-        paper_slug = f"{slug_id}_{_safe_name(paper.get('title', 'paper'))}"
-        paper_dir = os.path.join(artifacts_root, paper_slug)
-        os.makedirs(paper_dir, exist_ok=True)
-        _write_text(os.path.join(paper_dir, "selected_text.txt"), text)
-        _write_text(
-            os.path.join(paper_dir, "metadata.json"),
-            json.dumps(
-                {
-                    "pmid": paper.get("pmid"),
-                    "doi": paper.get("doi"),
-                    "geo_accession": paper.get("geo_accession"),
-                    "title": paper.get("title"),
-                    "url": paper.get("url"),
-                    "mesh_terms": paper.get("mesh_terms", []),
-                    "text_source": source,
-                },
-                indent=2,
-            ),
-        )
-        _write_bytes(os.path.join(paper_dir, "pmc_fulltext.xml"), fulltext_artifacts.get("pmc_xml"))
-        _write_bytes(os.path.join(paper_dir, "europepmc_fulltext.xml"), fulltext_artifacts.get("europepmc_xml"))
-        _write_bytes(os.path.join(paper_dir, "preprint_fulltext.xml"), fulltext_artifacts.get("preprint_xml"))
-        _write_bytes(os.path.join(paper_dir, "unpaywall_fulltext.pdf"), fulltext_artifacts.get("unpaywall_pdf"))
-        _write_bytes(os.path.join(paper_dir, "s2_fulltext.pdf"), fulltext_artifacts.get("s2_pdf"))
-
-        if not text:
-            print("skipped (no content)", file=sys.stderr)
-            stubs.append(_stub("no content retrievable", paper=paper))
-            continue
-
-        # ── Optional screening step ──────────────────────────────────────────
-        if criterion:
-            try:
-                screening = screen_paper(client, paper, criterion, text)
-            except Exception as e:
-                print(f"screening error: {e}", file=sys.stderr)
-                stubs.append(_stub(f"screening error: {e}", paper=paper))
-                continue
-
-            if not screening.get("relevant"):
-                print(f"not relevant ({screening.get('reason', '')})", file=sys.stderr)
-                continue
-
-            print(f"relevant [{source}]", end="", file=sys.stderr)
-        else:
-            print(f"[{source}]", end="", file=sys.stderr)
-
-        # ── Common citation/linked-PMID helpers ──────────────────────────────
-        lookup_pmid = paper.get("pmid")
-        if not lookup_pmid and id_type == "geo":
-            linked = paper.get("pmids", [])
-            lookup_pmid = linked[0] if linked else None
-
-        # ── Optional extraction step ─────────────────────────────────────────
-        if output_schema:
-            print(" — extracting fields", file=sys.stderr)
-            try:
-                result = extract_fields(client, paper, output_schema, text, extraction_max_tokens)
-                result["citation_count"] = get_citation_count(
-                    doi=paper.get("doi"), pmid=lookup_pmid
-                )
-                if id_type == "geo":
-                    result["linked_pmids"] = ", ".join(paper.get("pmids", []))
-                results.append(result)
-            except Exception as e:
-                print(f"  extraction error: {e}", file=sys.stderr)
-                stubs.append(_stub(f"extraction error: {e}", paper=paper))
-        else:
-            print("", file=sys.stderr)
-            result = {
-                "title": paper.get("title"),
-                "authors": paper.get("authors"),
-                "url": paper.get("url"),
-                "pmid": paper.get("pmid"),
-                "doi": paper.get("doi"),
-                "geo_accession": paper.get("geo_accession"),
-                "text_source": source,
-                "citation_count": get_citation_count(
-                    doi=paper.get("doi"), pmid=lookup_pmid
-                ),
-            }
-            if id_type == "geo":
-                result["linked_pmids"] = ", ".join(paper.get("pmids", []))
-            results.append(result)
+    md_renderer = generate_markdown_summary_batch if batch else generate_markdown_summary
 
     if not results:
         print("\nNo records to write.", file=sys.stderr)
         if markdown and stubs:
             print("Generating markdown summary (stubs only)...", file=sys.stderr)
             md_path = csv_path.replace(".csv", ".md")
-            md_content = generate_markdown_summary(client, stubs, output_schema, markdown_max_tokens)
+            md_content = md_renderer(client, stubs, output_schema, markdown_max_tokens)
             _write_text(md_path, md_content)
             print(f"Wrote markdown to {md_path}", file=sys.stderr)
         return None, 0
@@ -718,7 +950,7 @@ def run(
     if markdown:
         print("Generating markdown summary...", file=sys.stderr)
         md_path = csv_path.replace(".csv", ".md")
-        md_content = generate_markdown_summary(client, results + stubs, output_schema, markdown_max_tokens)
+        md_content = md_renderer(client, results + stubs, output_schema, markdown_max_tokens)
         _write_text(md_path, md_content)
         print(f"Wrote markdown to {md_path}", file=sys.stderr)
 

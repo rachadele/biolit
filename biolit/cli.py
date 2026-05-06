@@ -168,6 +168,10 @@ def _run_main(argv: list[str] | None = None) -> None:
                         help="Output CSV path (default: results.csv)")
     parser.add_argument("--markdown", "--md", action="store_true", default=False,
                         help="Also write a results.md markdown summary alongside the CSV")
+    parser.add_argument("--batch", action="store_true", default=False,
+                        help="Use the provider's Message Batches API for screening/extraction/markdown "
+                             "(~50%% cheaper, but blocks until the batch completes — up to 6h). "
+                             "Anthropic and OpenAI only; ignored on Ollama.")
 
     # LLM provider
     parser.add_argument(
@@ -244,6 +248,7 @@ def _run_main(argv: list[str] | None = None) -> None:
     use_markdown = args.markdown or bool(config.get("markdown"))
     markdown_max_tokens = args.markdown_max_tokens or config.get("markdown_max_tokens") or 1024
     extraction_max_tokens = args.extraction_max_tokens or config.get("extraction_max_tokens") or 4096
+    use_batch = args.batch or bool(config.get("batch"))
 
     # Build LLM client
     try:
@@ -304,6 +309,7 @@ def _run_main(argv: list[str] | None = None) -> None:
         markdown=use_markdown,
         markdown_max_tokens=markdown_max_tokens,
         extraction_max_tokens=extraction_max_tokens,
+        batch=use_batch,
     )
 
 
