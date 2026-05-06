@@ -2,7 +2,7 @@
 
 All notable changes to `biolit` are documented here.
 
-## [Unreleased]
+## [0.1.32] — 2026-05-06
 
 ### Added
 - **Provider-side batch APIs for screening, extraction, and markdown** — new `chat_batch()` method on the LLM client base class, with native overrides for Anthropic Message Batches and OpenAI Batches (~50% cheaper per request). Falls back to sequential `chat()` calls on Ollama and on OpenAI-compatible endpoints with a custom `base_url`. The Anthropic `chat()` path was refactored to share a `_messages_kwargs` helper with the batch path so the system-prompt handling is identical. Failed/expired individual requests within a batch return an empty string; both clients block on completion (6-hour timeout) with exponential-backoff polling.
