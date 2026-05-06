@@ -286,6 +286,7 @@ def run_pipeline(
     max_tokens: int = 0,
     bib_path: str = "",
     ids_file: str = "",
+    batch: bool = False,
 ) -> dict:
     """Run the fetch → (screen) → (extract) pipeline on a mixed list of identifiers and write a CSV.
 
@@ -323,6 +324,10 @@ def run_pipeline(
             Used when ids is empty. Takes precedence over ids_file.
         ids_file: Path to a plain-text file of identifiers (one per line, mixed types OK).
             Used when ids and bib_path are both empty.
+        batch: If True, use the provider's Message Batches API for screening, extraction,
+            and markdown rendering (~50% cheaper). Blocks until the batch completes —
+            up to 6 hours. Anthropic and OpenAI only; ignored on Ollama. Falls back to
+            the `batch` key in config_path.
 
     Returns:
         {"output_path": "..." | null, "relevant_count": N}
@@ -365,6 +370,7 @@ def run_pipeline(
     resolved_markdown_max_tokens = markdown_max_tokens or config.get("markdown_max_tokens") or 1024
     resolved_extraction_max_tokens = extraction_max_tokens or config.get("extraction_max_tokens") or 4096
     resolved_max_tokens = max_tokens or config.get("max_tokens") or DEFAULT_MAX_TOKENS
+    resolved_batch = batch or bool(config.get("batch"))
     csv_path, relevant_count = _run(
         client=_get_llm(),
         ids=id_list,
@@ -376,6 +382,7 @@ def run_pipeline(
         markdown_max_tokens=resolved_markdown_max_tokens,
         extraction_max_tokens=resolved_extraction_max_tokens,
         max_tokens=resolved_max_tokens,
+        batch=resolved_batch,
     )
     return {"output_path": csv_path, "relevant_count": relevant_count}
 
