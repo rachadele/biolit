@@ -5,12 +5,61 @@ lxml is unavailable, at the cost of namespace handling fidelity.
 """
 import re
 
+# JATS block-level elements at whose boundaries we insert ``\n`` during
+# text extraction. Inline elements (``sup``, ``sub``, ``italic``,
+# ``bold``, ``ext-link``, ``xref``, ``inline-formula``, …) are
+# deliberately excluded so compound terms with markup mid-token —
+# ``Foxp3<sup>creYFP</sup>Mice``, ``HDAC6<sup>KO</sup>``,
+# ``mtND6<sup>mut</sup>`` — stay glued in the output.
+_JATS_BLOCK_TAGS = frozenset({
+    "sec", "title", "label", "p", "list", "list-item",
+    "table-wrap", "caption", "fig", "boxed-text",
+    "disp-formula", "disp-quote", "abstract", "body",
+    "front", "back", "ref-list", "ref", "table", "tr",
+    "thead", "tbody", "th", "td",
+})
+
+
+def _local_name(tag) -> str:
+    """Strip XML namespace prefix from a tag name (``{ns}sec`` → ``sec``)."""
+    if not tag or not isinstance(tag, str):
+        return ""
+    if tag.startswith("{"):
+        return tag.split("}", 1)[-1]
+    return tag
+
+
+def _format_text(parts: list[str]) -> str:
+    """Join parts and collapse runs of 3+ newlines to ``\n\n``."""
+    return re.sub(r"\n{3,}", "\n\n", "".join(parts)).strip()
+
+
 try:
     from lxml import etree  # type: ignore[import]
 
     def _text_of(element) -> str:
-        """Extract all text content from an lxml element, stripping tags."""
-        return "".join(element.itertext()).strip()
+        """Walk element + descendants, emitting text with ``\n`` at
+        block-level boundaries but no separator at inline boundaries.
+        Replaces a previous ``''.join(itertext())`` that glued every
+        block boundary together (e.g. ``MethodsContact``,
+        ``DetailsMice``, ``MiceWe``)."""
+        parts: list[str] = []
+
+        def walk(e) -> None:
+            is_block = _local_name(e.tag) in _JATS_BLOCK_TAGS
+            if is_block:
+                parts.append("\n")
+            if e.text:
+                parts.append(e.text)
+            for child in e:
+                walk(child)
+                if child.tail:
+                    parts.append(child.tail)
+            if is_block:
+                parts.append("\n")
+
+        walk(element)
+        return _format_text(parts)
 
     def _parse_xml(xml_bytes: bytes):
         parser = etree.XMLParser(recover=True, remove_comments=True)
@@ -24,13 +73,24 @@ except ImportError:
     import xml.etree.ElementTree as ET
 
     def _text_of(element) -> str:  # type: ignore[misc]
-        texts = []
-        for node in element.iter():
-            if node.text:
-                texts.append(node.text)
-            if node.tail:
-                texts.append(node.tail)
-        return " ".join(texts).strip()
+        """ET fallback: same block-aware traversal as the lxml path."""
+        parts: list[str] = []
+
+        def walk(e) -> None:
+            is_block = _local_name(e.tag) in _JATS_BLOCK_TAGS
+            if is_block:
+                parts.append("\n")
+            if e.text:
+                parts.append(e.text)
+            for child in e:
+                walk(child)
+                if child.tail:
+                    parts.append(child.tail)
+            if is_block:
+                parts.append("\n")
+
+        walk(element)
+        return _format_text(parts)
 
     def _parse_xml(xml_bytes: bytes):  # type: ignore[misc]
         return ET.fromstring(xml_bytes)

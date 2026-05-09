@@ -34,6 +34,32 @@ class TestParseJatsSections:
         result = parse_jats_sections(b"")
         assert isinstance(result, dict)
 
+    def test_block_boundaries_are_separated_inline_tags_stay_glued(self):
+        """Per 2026-05-09 audit: heading/paragraph block boundaries
+        used to glue (`MethodsContact`, `DetailsMice`, `MiceWe`)
+        because ``''.join(itertext())`` had no separator. Inline tags
+        like ``<sup>`` mid-token must NOT introduce a separator —
+        compound terms (``Foxp3creYFP``, ``HDAC6KO``, ``mtND6mut``)
+        depend on staying glued."""
+        xml = (
+            b"<article><body>"
+            b"<sec><title>Methods</title>"
+            b"<p>Contact for Reagent Sharing</p>"
+            b"<sec><title>Mice</title>"
+            b"<p>We used Foxp3<sup>creYFP</sup>Mice and "
+            b"HDAC6<sup>KO</sup> animals.</p>"
+            b"</sec></sec></body></article>"
+        )
+        secs = parse_jats_sections(xml)
+        methods = secs.get("methods", "")
+        # Block boundaries split.
+        assert "MethodsContact" not in methods
+        assert "SharingMice" not in methods
+        assert "MiceWe" not in methods
+        # Inline-tag-bridged compound terms stay intact.
+        assert "Foxp3creYFPMice" in methods
+        assert "HDAC6KO" in methods
+
 
 class TestSelectSections:
     def test_returns_all_sections_when_wanted_is_none(self):
