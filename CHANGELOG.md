@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.33] — 2026-05-10
+
+### Fixed
+- **JATS XML text extraction: insert newlines at block boundaries, keep inline-tag-bridged compound terms glued** — `biolit/parsers/jats.py` previously used `''.join(itertext())` with no separator at all, so adjacent block elements (`<sec>` / `<title>` / `<p>` / `<list-item>` / table cells) concatenated into runs like `MethodsContact`, `DetailsMice`, `MiceWe`, `SharingFurther` in extracted Methods sections. A naive `' '.join(itertext())` would have fragmented compound terms with inline markup mid-token (`Foxp3<sup>creYFP</sup>Mice` → `Foxp3 creYFP Mice` — wrong, that's one strain name; same for `HDAC6<sup>KO</sup>`, `mtND6<sup>mut</sup>`). The new traversal is JATS-aware: it emits `\n` only at boundaries of known block-level elements (`sec`, `title`, `label`, `p`, `list`, `list-item`, `table-wrap`, `caption`, `fig`, `boxed-text`, `disp-formula`, `disp-quote`, `abstract`, `body`, `front`, `back`, `ref-list`, `ref`, `table`/`tr`/`thead`/`tbody`/`th`/`td`) and emits no separator at inline boundaries (`sup`, `sub`, `italic`, `bold`, `ext-link`, `xref`, `inline-formula`). Runs of 3+ newlines collapse to `\n\n`. Both the `lxml` path and the `xml.etree.ElementTree` fallback share the traversal via a `_local_name` namespace-stripping helper. Affects every downstream stage that consumes full-text JATS XML (screening, extraction, markdown rendering).
+
 ## [0.1.32] — 2026-05-06
 
 ### Added
