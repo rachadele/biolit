@@ -4,34 +4,43 @@ The main-article fetchers (``pubmed`` / ``europepmc`` / ``preprints``)
 return only the article body. Supplementary methods — where strain
 backgrounds, cell-line provenance, antibody/reagent details, and other
 curation-relevant facts often live — sit in *separate files* referenced
-by ``<supplementary-material>`` elements in the JATS XML and bundled in
-the paper's PubMed Central Open Access (OA) package. The article XML
-carries only the supplement's caption, never its content, so a
+by ``<supplementary-material>`` elements in the JATS XML. The article
+XML carries only the supplement's caption, never its content, so a
 full-text fetch alone never surfaces supplementary methods.
 
-This module downloads the PMC OA ``.tar.gz`` package, restricts to the
-files the JATS declares as supplementary material, and extracts their
-text (PDF via pdfminer.six, DOCX via python-docx, plain text decoded
-directly).
+This module retrieves those files from **Europe PMC**:
 
-**Open-access only.** The PMC OA service serves the OA subset; for
-paywalled articles the package is not available and this returns ``[]``.
+* the ``supplementaryFiles`` endpoint returns a ZIP of the article's
+  supplementary files (PDF / DOCX / tables / figures);
+* the ``fullTextXML`` endpoint supplies the JATS, whose
+  ``<supplementary-material>`` captions label each file (so callers can
+  pick "Supplementary Methods" out of a pile of data tables).
+
+It then extracts text (PDF via pdfminer.six, DOCX via python-docx, plain
+text decoded directly).
+
+**Open-access only.** Europe PMC serves supplementary files for the OA
+subset; for paywalled articles the ZIP is unavailable and this returns
+``[]``.
+
+(The NCBI PMC OA ``oa_package`` FTP tree — the obvious-looking route —
+is deprecated and no longer serves per-article packages, which is why
+this goes through Europe PMC instead.)
 """
 from __future__ import annotations
 
 import io
 import os
-import re
-import tarfile
 import time
+import zipfile
 from dataclasses import dataclass
 
 import requests
 
 from .pubmed import doi_to_pmcid, pmid_to_pmcid
 
-OA_SERVICE = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
-_RATE_DELAY = 0.4  # be polite to the OA service
+EPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+_RATE_DELAY = 0.4  # be polite to Europe PMC
 
 # Extensions we can turn into text, mapped to a coarse ``kind``.
 _KIND_BY_EXT = {
@@ -45,7 +54,7 @@ _KIND_BY_EXT = {
 
 @dataclass
 class SuppFile:
-    """One supplementary file from a paper's OA package.
+    """One supplementary file from a paper.
 
     ``label`` is the caption/title the JATS attached to the file (e.g.
     "Supplementary Methods", "Table S1") — use it to pick the methods
@@ -73,47 +82,32 @@ def _resolve_pmcid(
     return None
 
 
-def _oa_package_href(pmcid: str) -> str | None:
-    """Ask the PMC OA service for the article's ``.tar.gz`` location.
+def _download_supp_zip(pmcid: str) -> bytes | None:
+    """Download the Europe PMC supplementary-files ZIP for *pmcid*.
 
-    Returns the advertised href (an ``ftp://`` URL) or None when the
-    article isn't in the OA subset / the service errors."""
+    Returns the ZIP bytes, or None when the article has no OA
+    supplementary files / the request errors."""
     try:
-        resp = requests.get(OA_SERVICE, params={"id": pmcid}, timeout=20)
+        resp = requests.get(
+            f"{EPMC_BASE}/{pmcid}/supplementaryFiles", timeout=120
+        )
         resp.raise_for_status()
     except Exception:
         return None
-    m = re.search(r'<link[^>]*format="tgz"[^>]*href="([^"]+)"', resp.text)
-    return m.group(1) if m else None
+    data = resp.content
+    return data if data[:2] == b"PK" else None  # zip magic
 
 
-def _download_package(href: str) -> bytes | None:
-    """Download the OA package gzip. The OA service advertises an
-    ``ftp://`` URL; the same path is mirrored over HTTPS. Try HTTPS
-    first (works through proxies/firewalls that block FTP), then fall
-    back to FTP. Returns the gzip bytes, or None."""
-    candidates = []
-    if href.startswith("ftp://"):
-        candidates.append(re.sub(r"^ftp://", "https://", href))
-        candidates.append(href)
-    else:
-        candidates.append(href)
-    for url in candidates:
-        try:
-            if url.startswith("ftp://"):
-                import urllib.request
-
-                with urllib.request.urlopen(url, timeout=120) as r:
-                    data = r.read()
-            else:
-                resp = requests.get(url, timeout=120)
-                resp.raise_for_status()
-                data = resp.content
-        except Exception:
-            continue
-        if data[:2] == b"\x1f\x8b":  # gzip magic
-            return data
-    return None
+def _supp_labels(pmcid: str) -> dict[str, str]:
+    """Fetch the article JATS from Europe PMC and map each declared
+    supplementary file's stem → caption. Empty dict on any failure
+    (the caller then falls back to filename-based handling)."""
+    try:
+        resp = requests.get(f"{EPMC_BASE}/{pmcid}/fullTextXML", timeout=60)
+        resp.raise_for_status()
+    except Exception:
+        return {}
+    return _supp_labels_from_nxml(resp.content)
 
 
 def _supp_labels_from_nxml(nxml: bytes) -> dict[str, str]:
@@ -133,7 +127,6 @@ def _supp_labels_from_nxml(nxml: bytes) -> dict[str, str]:
     for sm in root.iter("{*}supplementary-material"):
         href = sm.get(f"{{{xlink}}}href") or sm.get("href")
         if not href:
-            # Some place the href on a child <media>.
             media = sm.find(".//{*}media")
             if media is not None:
                 href = media.get(f"{{{xlink}}}href") or media.get("href")
@@ -169,58 +162,54 @@ def fetch_supplementary(
     doi: str | None = None,
     extract: bool = True,
 ) -> list[SuppFile]:
-    """Fetch a paper's supplementary files from its PMC OA package.
+    """Fetch a paper's supplementary files from Europe PMC.
 
     Provide exactly one identifier (``pmcid`` preferred; ``pmid`` / ``doi``
-    are resolved to a PMCID via the NCBI ID converter). Returns the files
-    the JATS declares as ``<supplementary-material>`` — the main-article
-    PDF and inline figures bundled in the package are excluded. With
-    ``extract=True`` (default) PDF / DOCX / text bodies are parsed into
-    :attr:`SuppFile.text`; pass ``extract=False`` to list files only.
+    are resolved to a PMCID via the NCBI ID converter). Returns the
+    article's supplementary documents — each file that the JATS declares
+    as ``<supplementary-material>`` *or* that is itself text-extractable
+    (pdf / docx / txt / csv / tsv); loose figure images bundled in the
+    ZIP that are neither are skipped. With ``extract=True`` (default) PDF
+    / DOCX / text bodies are parsed into :attr:`SuppFile.text`; pass
+    ``extract=False`` to list files only.
 
-    Returns ``[]`` when the article isn't open access, has no declared
-    supplement, or the package can't be retrieved. **Open access only** —
-    paywalled supplements aren't reachable through this route.
+    Returns ``[]`` when the article isn't open access, has no supplement,
+    or the ZIP can't be retrieved. **Open access only** — paywalled
+    supplements aren't reachable through this route.
     """
     resolved = _resolve_pmcid(pmcid, pmid, doi)
     if not resolved:
         return []
-    href = _oa_package_href(resolved)
-    if not href:
-        return []
-    blob = _download_package(href)
+    blob = _download_supp_zip(resolved)
     time.sleep(_RATE_DELAY)
     if not blob:
         return []
     try:
-        tar = tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz")
-        members = [m for m in tar.getmembers() if m.isfile()]
+        zf = zipfile.ZipFile(io.BytesIO(blob))
     except Exception:
         return []
 
-    # The JATS in the package declares which files are supplementary.
-    labels: dict[str, str] = {}
-    for m in members:
-        if m.name.lower().endswith((".nxml", ".xml")):
-            f = tar.extractfile(m)
-            if f:
-                labels = _supp_labels_from_nxml(f.read())
-            break
-    if not labels:
-        return []  # nothing declared as supplementary material
+    labels = _supp_labels(resolved)
 
     out: list[SuppFile] = []
-    for m in members:
-        base = os.path.basename(m.name)
+    for name in zf.namelist():
+        if name.endswith("/"):
+            continue
+        base = os.path.basename(name)
+        if not base:
+            continue
         stem = os.path.splitext(base)[0].lower()
-        if stem not in labels:
-            continue  # not a declared supplementary file (main PDF, figures, NXML)
-        if extract:
-            f = tar.extractfile(m)
-            data = f.read() if f else b""
-            kind, text = _extract_text(base, data)
+        ext = base.rsplit(".", 1)[-1].lower() if "." in base else ""
+        declared = stem in labels
+        text_ext = ext in _KIND_BY_EXT
+        if not (declared or text_ext):
+            continue  # loose figure image, not a declared supplement
+        if extract and text_ext:
+            try:
+                kind, text = _extract_text(base, zf.read(name))
+            except Exception:
+                kind, text = _KIND_BY_EXT.get(ext, "other"), ""
         else:
-            ext = base.rsplit(".", 1)[-1].lower() if "." in base else ""
             kind, text = _KIND_BY_EXT.get(ext, "other"), ""
         out.append(
             SuppFile(
@@ -228,7 +217,7 @@ def fetch_supplementary(
                 kind=kind,
                 label=labels.get(stem, ""),
                 text=text,
-                n_bytes=m.size,
+                n_bytes=zf.getinfo(name).file_size,
             )
         )
     return out

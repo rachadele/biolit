@@ -151,7 +151,7 @@ def fetch_supplementary(
     extract: bool = True,
 ) -> dict:
     """Fetch a paper's supplementary files (supplementary methods, tables)
-    from its PubMed Central Open Access package.
+    from Europe PMC.
 
     Supplementary methods often carry curation-relevant detail (strain
     backgrounds, cell-line provenance, reagents) that the main article

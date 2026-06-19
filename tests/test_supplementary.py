@@ -1,6 +1,6 @@
-"""Tests for the supplementary-materials fetcher."""
+"""Tests for the supplementary-materials fetcher (Europe PMC route)."""
 import io
-import tarfile
+import zipfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,11 +9,10 @@ from biolit.fetchers import supplementary as supp
 from biolit.fetchers.supplementary import SuppFile, fetch_supplementary
 
 
-# JATS that declares two supplementary files (href on a child <media>) plus
+# JATS declaring two supplementary files (href on a child <media>) plus
 # one whose href omits the extension, to exercise stem matching.
 NXML = b"""<?xml version="1.0"?>
 <article xmlns:xlink="http://www.w3.org/1999/xlink">
-  <front><article-meta><title-group><article-title>T</article-title></title-group></article-meta></front>
   <body><sec><title>Methods</title><p>see supplement</p></sec></body>
   <back>
     <sec sec-type="supplementary-material">
@@ -34,94 +33,85 @@ NXML = b"""<?xml version="1.0"?>
 </article>
 """
 
+LABELS = supp._supp_labels_from_nxml(NXML)
 
-def _make_package(members: dict[str, bytes]) -> bytes:
-    """Build a real .tar.gz (gzip magic + tar) like a PMC OA package."""
+
+def _make_zip(members: dict[str, bytes]) -> bytes:
+    """Build a real ZIP (PK magic) like the Europe PMC supplementaryFiles
+    response."""
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+    with zipfile.ZipFile(buf, mode="w") as zf:
         for name, data in members.items():
-            info = tarfile.TarInfo(name=name)
-            info.size = len(data)
-            tar.addfile(info, io.BytesIO(data))
+            zf.writestr(name, data)
     return buf.getvalue()
 
 
-PACKAGE = _make_package({
-    "PMC1/article.nxml": NXML,
-    "PMC1/mmc1.pdf": b"%PDF-1.4 methods",          # declared supp (pdf)
-    "PMC1/mmc2.xlsx": b"PK\x03\x04 xlsx-bytes",     # declared supp (other)
-    "PMC1/media-3.pdf": b"%PDF-1.4 data",           # declared via ext-less href
-    "PMC1/main-article.pdf": b"%PDF-1.4 main",      # NOT declared -> excluded
+SUPP_ZIP = _make_zip({
+    "mmc1.pdf": b"%PDF-1.4 methods",          # declared supp (pdf)
+    "mmc2.xlsx": b"PK\x03\x04 xlsx-bytes",     # declared supp (other, no text)
+    "media-3.pdf": b"%PDF-1.4 data",           # declared via ext-less href
+    "Fig1_HTML.jpg": b"\xff\xd8\xff jpeg",     # loose figure -> excluded
 })
 
 
 # ---------------------------------------------------------------------------
-# fetch_supplementary — core package parsing / filtering
+# fetch_supplementary — zip parsing / filtering / labels
 # ---------------------------------------------------------------------------
 
 class TestFetchSupplementary:
-    def _patch_fetch(self, mocks_text="METHODS: adult male C57BL/6 mice"):
-        # Resolve, package URL, and download are patched; PDF text mocked.
+    def _patch(self, pdf_text="METHODS: adult male C57BL/6 mice"):
         return (
-            patch.object(supp, "_oa_package_href", return_value="ftp://x/pkg.tar.gz"),
-            patch.object(supp, "_download_package", return_value=PACKAGE),
-            patch("biolit.parsers.pdf.extract_pdf_text", return_value=mocks_text),
+            patch.object(supp, "_download_supp_zip", return_value=SUPP_ZIP),
+            patch.object(supp, "_supp_labels", return_value=LABELS),
+            patch("biolit.parsers.pdf.extract_pdf_text", return_value=pdf_text),
         )
 
-    def test_returns_only_declared_supplementary_files(self):
-        a, b, c = self._patch_fetch()
+    def test_returns_declared_and_text_files_excludes_loose_figures(self):
+        a, b, c = self._patch()
         with a, b, c:
-            files = fetch_supplementary(pmcid="PMC1")
-        names = {f.name for f in files}
-        # mmc1.pdf, mmc2.xlsx, media-3.pdf declared; main + nxml excluded
-        assert names == {"mmc1.pdf", "mmc2.xlsx", "media-3.pdf"}
-        assert "main-article.pdf" not in names
+            files = {f.name: f for f in fetch_supplementary(pmcid="PMC1")}
+        # declared supp (mmc1, mmc2, media-3) kept; loose Fig1 excluded
+        assert set(files) == {"mmc1.pdf", "mmc2.xlsx", "media-3.pdf"}
+        assert "Fig1_HTML.jpg" not in files
 
-    def test_labels_and_kinds(self):
-        a, b, c = self._patch_fetch()
+    def test_labels_kinds_and_text(self):
+        a, b, c = self._patch()
         with a, b, c:
             files = {f.name: f for f in fetch_supplementary(pmcid="PMC1")}
         assert files["mmc1.pdf"].label == "Supplementary Methods"
         assert files["mmc1.pdf"].kind == "pdf"
         assert "C57BL/6" in files["mmc1.pdf"].text
         assert files["mmc2.xlsx"].label == "Table S1"
-        assert files["mmc2.xlsx"].kind == "other"      # xlsx not text-extractable
+        assert files["mmc2.xlsx"].kind == "other"   # xlsx not text-extractable
         assert files["mmc2.xlsx"].text == ""
-        # ext-less JATS href ("media-3") still matches the packaged media-3.pdf
-        assert files["media-3.pdf"].kind == "pdf"
+        assert files["media-3.pdf"].kind == "pdf"    # ext-less JATS href matched
         assert files["media-3.pdf"].label == "Supplementary Data"
 
+    def test_text_extractable_kept_even_without_labels(self):
+        # No JATS labels available -> still return the text-extractable files.
+        a, _, c = self._patch()
+        with a, patch.object(supp, "_supp_labels", return_value={}), c:
+            files = {f.name: f for f in fetch_supplementary(pmcid="PMC1")}
+        assert set(files) == {"mmc1.pdf", "media-3.pdf"}  # pdfs kept
+        assert "mmc2.xlsx" not in files  # not text-extractable, not declared
+        assert all(f.label == "" for f in files.values())
+
     def test_extract_false_lists_without_text(self):
-        a, b, _ = self._patch_fetch()
+        a, b, _ = self._patch()
         with a, b:
             files = fetch_supplementary(pmcid="PMC1", extract=False)
         assert {f.name for f in files} == {"mmc1.pdf", "mmc2.xlsx", "media-3.pdf"}
         assert all(f.text == "" for f in files)
-        assert {f.kind for f in files if f.name.endswith(".pdf")} == {"pdf"}
 
     def test_no_pmcid_resolved_returns_empty(self):
         assert fetch_supplementary() == []
 
-    def test_no_oa_package_returns_empty(self):
-        with patch.object(supp, "_oa_package_href", return_value=None):
+    def test_no_zip_returns_empty(self):
+        with patch.object(supp, "_download_supp_zip", return_value=None):
             assert fetch_supplementary(pmcid="PMC1") == []
-
-    def test_download_failure_returns_empty(self):
-        with patch.object(supp, "_oa_package_href", return_value="ftp://x/p.tgz"), \
-             patch.object(supp, "_download_package", return_value=None):
-            assert fetch_supplementary(pmcid="PMC1") == []
-
-    def test_no_declared_supplementary_returns_empty(self):
-        pkg = _make_package({
-            "PMC2/article.nxml": b"<article><body><p>no supp</p></body></article>",
-            "PMC2/main.pdf": b"%PDF-1.4 main",
-        })
-        with patch.object(supp, "_oa_package_href", return_value="ftp://x/p.tgz"), \
-             patch.object(supp, "_download_package", return_value=pkg):
-            assert fetch_supplementary(pmcid="PMC2") == []
 
     def test_resolves_pmid_to_pmcid(self):
-        a, b, c = self._patch_fetch()
+        a, b, c = self._patch()
         with patch.object(supp, "pmid_to_pmcid", return_value="PMC1") as m, a, b, c:
             files = fetch_supplementary(pmid="999")
         m.assert_called_once_with("999")
@@ -150,64 +140,46 @@ class TestResolvePmcid:
 
 
 # ---------------------------------------------------------------------------
-# _oa_package_href — parsing the OA service response
+# _download_supp_zip / _supp_labels — Europe PMC HTTP
 # ---------------------------------------------------------------------------
 
-def _resp(text="", status=200):
+def _resp(content=b"", status=200):
     r = MagicMock()
-    r.text = text
+    r.content = content
     r.raise_for_status = MagicMock()
     if status >= 400:
         r.raise_for_status.side_effect = Exception(f"HTTP {status}")
     return r
 
 
-class TestOaPackageHref:
-    OA_XML = (
-        '<OA><records><record id="PMC1">'
-        '<link format="tgz" href="ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/oa_package/aa/bb/PMC1.tar.gz" />'
-        '<link format="pdf" href="ftp://x/PMC1.pdf" />'
-        '</record></records></OA>'
-    )
+class TestDownloadSuppZip:
+    @patch("biolit.fetchers.supplementary.requests.get")
+    def test_returns_zip_bytes(self, mock_get):
+        mock_get.return_value = _resp(SUPP_ZIP)
+        out = supp._download_supp_zip("PMC1")
+        assert out[:2] == b"PK"
+        assert "PMC1/supplementaryFiles" in mock_get.call_args[0][0]
 
     @patch("biolit.fetchers.supplementary.requests.get")
-    def test_extracts_tgz_href(self, mock_get):
-        mock_get.return_value = _resp(self.OA_XML)
-        assert supp._oa_package_href("PMC1").endswith("PMC1.tar.gz")
-
-    @patch("biolit.fetchers.supplementary.requests.get")
-    def test_none_when_no_tgz(self, mock_get):
-        mock_get.return_value = _resp("<OA><records><record/></records></OA>")
-        assert supp._oa_package_href("PMC1") is None
+    def test_rejects_non_zip(self, mock_get):
+        mock_get.return_value = _resp(b"<html>not found</html>")
+        assert supp._download_supp_zip("PMC1") is None
 
     @patch("biolit.fetchers.supplementary.requests.get")
     def test_none_on_error(self, mock_get):
         mock_get.side_effect = ConnectionError("down")
-        assert supp._oa_package_href("PMC1") is None
+        assert supp._download_supp_zip("PMC1") is None
 
 
-# ---------------------------------------------------------------------------
-# _download_package — https-mirror-first, gzip-magic check
-# ---------------------------------------------------------------------------
-
-class TestDownloadPackage:
+class TestSuppLabels:
     @patch("biolit.fetchers.supplementary.requests.get")
-    def test_https_mirror_success(self, mock_get):
-        r = MagicMock()
-        r.content = b"\x1f\x8b gzipped"
-        r.raise_for_status = MagicMock()
-        mock_get.return_value = r
-        out = supp._download_package("ftp://ftp.ncbi.nlm.nih.gov/p/PMC1.tar.gz")
-        assert out.startswith(b"\x1f\x8b")
-        # rewrote ftp:// -> https:// for the requests call
-        assert mock_get.call_args[0][0].startswith("https://")
+    def test_parses_labels_from_jats(self, mock_get):
+        mock_get.return_value = _resp(NXML)
+        labels = supp._supp_labels("PMC1")
+        assert labels["mmc1"] == "Supplementary Methods"
+        assert labels["media-3"] == "Supplementary Data"
 
     @patch("biolit.fetchers.supplementary.requests.get")
-    def test_rejects_non_gzip(self, mock_get):
-        r = MagicMock()
-        r.content = b"<html>not found</html>"
-        r.raise_for_status = MagicMock()
-        mock_get.return_value = r
-        # https returns non-gzip; ftp fallback also fails (urlopen raises)
-        with patch("urllib.request.urlopen", side_effect=Exception("no ftp")):
-            assert supp._download_package("ftp://x/PMC1.tar.gz") is None
+    def test_empty_on_error(self, mock_get):
+        mock_get.side_effect = ConnectionError("down")
+        assert supp._supp_labels("PMC1") == {}
