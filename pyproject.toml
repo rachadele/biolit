@@ -25,6 +25,7 @@ dependencies = [
     "python-dotenv",
     "lxml",
     "pdfminer.six",
+    "python-docx",
     "mcp[cli]",
 ]
 

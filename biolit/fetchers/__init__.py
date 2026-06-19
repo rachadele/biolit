@@ -9,6 +9,7 @@ from biolit.fetchers._hooks import (
 )
 from biolit.fetchers.preprints import fetch_preprint
 from biolit.fetchers.pubmed import fetch_pmc_fulltext, fetch_pubmed_metadata
+from biolit.fetchers.supplementary import SuppFile, fetch_supplementary
 from biolit.fetchers.unpaywall import fetch_via_unpaywall
 
 # Auto-register opt-in fetchers configured via environment variables.
@@ -49,4 +50,6 @@ __all__ = [
     "fetch_pmc_fulltext",
     "fetch_preprint",
     "fetch_via_unpaywall",
+    "fetch_supplementary",
+    "SuppFile",
 ]

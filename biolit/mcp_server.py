@@ -32,6 +32,7 @@ from biolit.config import load_config
 
 from biolit.fetchers.geo import fetch_geo_record as _fetch_geo_record
 from biolit.fetchers.pubmed import fetch_pubmed_metadata as _fetch_pubmed_metadata, doi_to_pmid, doi_to_pmcid
+from biolit.fetchers.supplementary import fetch_supplementary as _fetch_supplementary
 from biolit.fetchers.semantic_scholar import get_s2_pdf_url
 from biolit.llm import get_llm_client
 from biolit.parsers.utils import DEFAULT_MAX_TOKENS
@@ -140,6 +141,51 @@ def fetch_fulltext(
 
     text, source, _ = resolve_fulltext(paper, unpaywall_email=email, sections_wanted=sections_wanted)
     return {"text": text, "source": source}
+
+
+@mcp.tool()
+def fetch_supplementary(
+    pmcid: str = "",
+    pmid: str = "",
+    doi: str = "",
+    extract: bool = True,
+) -> dict:
+    """Fetch a paper's supplementary files (supplementary methods, tables)
+    from its PubMed Central Open Access package.
+
+    Supplementary methods often carry curation-relevant detail (strain
+    backgrounds, cell-line provenance, reagents) that the main article
+    body omits. The full-text fetchers never return it because the JATS
+    only references supplementary files; this retrieves and parses them.
+
+    Provide one of pmcid / pmid / doi (pmcid preferred). Open access only —
+    paywalled supplements are not retrievable.
+
+    Args:
+        pmcid: PubMed Central ID (e.g. "PMC10700610"), preferred.
+        pmid: PubMed ID; resolved to a PMCID if pmcid is absent.
+        doi: DOI; resolved to a PMCID if pmcid and pmid are absent.
+        extract: Parse PDF/DOCX/text bodies (default True); False lists only.
+
+    Returns:
+        {"files": [{"name", "kind", "label", "text", "n_bytes"}, ...]}
+        — empty list when the article isn't OA or has no supplement.
+    """
+    files = _fetch_supplementary(
+        pmcid=pmcid or None, pmid=pmid or None, doi=doi or None, extract=extract
+    )
+    return {
+        "files": [
+            {
+                "name": f.name,
+                "kind": f.kind,
+                "label": f.label,
+                "text": f.text,
+                "n_bytes": f.n_bytes,
+            }
+            for f in files
+        ]
+    }
 
 
 @mcp.tool()

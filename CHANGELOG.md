@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [Unreleased]
+
+### Added
+- **Supplementary-materials fetcher** — new `fetch_supplementary(pmcid|pmid|doi)` (`biolit/fetchers/supplementary.py`) downloads a paper's PubMed Central Open Access `.tar.gz` package, restricts to the files the JATS declares as `<supplementary-material>` (so the main-article PDF and inline figures are excluded), and extracts their text. Supplementary **methods** — where strain backgrounds, cell-line provenance, and reagent/antibody detail often live — are referenced only by pointer in the article JATS and so are invisible to the full-text fetchers; this surfaces them. Returns `list[SuppFile]` with `name`, `kind` (pdf/docx/text/other), `label` (the JATS caption, e.g. "Supplementary Methods"), and extracted `text`. **Open access only** — paywalled supplements aren't retrievable. Exposed as the `fetch_supplementary` MCP tool. Adds a `python-docx` dependency, a public `extract_pdf_text()` helper, and `parsers/docx.py`.
+
 ## [0.1.33] — 2026-05-10
 
 ### Fixed
