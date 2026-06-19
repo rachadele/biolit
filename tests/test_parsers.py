@@ -1,8 +1,31 @@
 """Unit tests for the JATS XML and section-selection parsers."""
+import io
+
 import pytest
 
+from biolit.parsers.docx import extract_docx_text
 from biolit.parsers.jats import parse_jats_sections
 from biolit.parsers.utils import select_sections
+
+
+class TestExtractDocxText:
+    def test_extracts_paragraphs_and_tables(self):
+        docx = pytest.importorskip("docx")  # python-docx
+        doc = docx.Document()
+        doc.add_paragraph("Supplementary Methods")
+        doc.add_paragraph("Mice were on a C57BL/6 background.")
+        table = doc.add_table(rows=1, cols=2)
+        table.rows[0].cells[0].text = "Antibody"
+        table.rows[0].cells[1].text = "anti-GFP"
+        buf = io.BytesIO()
+        doc.save(buf)
+        text = extract_docx_text(buf.getvalue())
+        assert "Supplementary Methods" in text
+        assert "C57BL/6" in text
+        assert "Antibody\tanti-GFP" in text
+
+    def test_returns_empty_on_garbage(self):
+        assert extract_docx_text(b"not a docx") == ""
 
 
 class TestParseJatsSections:

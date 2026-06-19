@@ -47,6 +47,21 @@ def _extract_text(pdf_bytes: bytes) -> str:
         return ""
 
 
+def extract_pdf_text(pdf_bytes: bytes) -> str:
+    """Public: raw extracted text from PDF bytes (``""`` on failure).
+
+    Thin wrapper over the internal extractor for callers that want the
+    whole document as one string rather than heuristic sections — e.g.
+    the supplementary-materials fetcher mining a supplementary-methods
+    PDF. Re-raises ImportError so a missing pdfminer.six stays loud."""
+    try:
+        return _extract_text(pdf_bytes)
+    except ImportError:
+        raise
+    except Exception:
+        return ""
+
+
 def parse_pdf_sections(pdf_bytes: bytes) -> dict[str, str]:
     """Extract text from *pdf_bytes* and split by section heading.
 
