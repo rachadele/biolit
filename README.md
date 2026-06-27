@@ -151,7 +151,14 @@ Full-text retrieval runs automatically for every PMID and DOI (including preprin
 3. Preprint XML (bioRxiv / medRxiv)
 4. Unpaywall PDF (requires `--unpaywall-email`)
 5. Semantic Scholar open-access PDF
-6. Abstract fallback
+6. OpenAlex green-OA PDF (author manuscripts Unpaywall/S2 miss; key-less)
+7. Europe PMC open-access full-text PDF (OA subset)
+8. CORE aggregated green-OA PDF (opt-in; needs `CORE_API_KEY`)
+9. Abstract fallback
+
+Steps 6-8 are all open-access-only (green-OA author manuscripts and
+institutional-repository copies) — never a paywall bypass. OpenAlex and
+Europe PMC need no key; CORE is a no-op unless `CORE_API_KEY` is set.
 
 To enable Unpaywall (step 4), pass your email:
 
@@ -199,7 +206,7 @@ With default fields, the CSV columns are:
 | `pmid` | PubMed ID (null for unindexed preprints) |
 | `doi` | DOI (null for GEO records) |
 | `geo_accession` | GEO accession (null for non-GEO records) |
-| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `geo_linked_fulltext`, `geo_linked_abstract`, `geo_record`) |
+| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `openalex_pdf`, `europepmc_oa_pdf`, `core_pdf`, `geo_linked_fulltext`, `geo_linked_abstract`, `geo_record`) |
 | `citation_count` | Citation count from Semantic Scholar (null if not found) |
 | `methodology` | General method (e.g. GWAS, scRNA-seq, proteomics) |
 | `sample_type` | Tissue/sample type and origin |
@@ -316,7 +323,7 @@ result = screen_paper(client, paper, "Is this about schizophrenia genomics?", pa
 ## Custom full-text fetchers
 
 The built-in chain (PMC → Europe PMC → preprint → Unpaywall → Semantic
-Scholar → abstract) leaves coverage gaps for closed-access or
+Scholar → OpenAlex → Europe PMC OA PDF → CORE → abstract) leaves coverage gaps for closed-access or
 recently-published work. You can plug in additional sources of full text
 — a Zotero library, a flat directory of PDFs, an institutional
 full-text database — without forking biolit.

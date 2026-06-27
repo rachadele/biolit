@@ -11,6 +11,9 @@ from biolit.fetchers.preprints import fetch_preprint
 from biolit.fetchers.pubmed import fetch_pmc_fulltext, fetch_pubmed_metadata
 from biolit.fetchers.supplementary import SuppFile, fetch_supplementary
 from biolit.fetchers.unpaywall import fetch_via_unpaywall
+from biolit.fetchers.openalex import fetch_via_openalex
+from biolit.fetchers.europepmc_pdf import fetch_europepmc_pdf
+from biolit.fetchers.core import fetch_via_core
 
 # Auto-register opt-in fetchers configured via environment variables.
 # Each ``maybe_autoload`` returns True iff the corresponding env config was
@@ -50,6 +53,9 @@ __all__ = [
     "fetch_pmc_fulltext",
     "fetch_preprint",
     "fetch_via_unpaywall",
+    "fetch_via_openalex",
+    "fetch_europepmc_pdf",
+    "fetch_via_core",
     "fetch_supplementary",
     "SuppFile",
 ]
