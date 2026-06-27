@@ -16,6 +16,8 @@ from biolit.fetchers.semantic_scholar import fetch_s2_pdf, get_citation_count
 from biolit.fetchers.openalex import fetch_via_openalex
 from biolit.fetchers.europepmc_pdf import fetch_europepmc_pdf
 from biolit.fetchers.core import fetch_via_core
+from biolit.fetchers.landing_page import fetch_via_landing_page
+from biolit.fetchers.custom_resolvers import fetch_via_custom_resolvers
 from biolit.llm.base import BaseLLMClient
 from biolit.parsers.jats import parse_jats_sections
 from biolit.parsers.pdf import parse_pdf_sections
@@ -360,7 +362,10 @@ def resolve_fulltext(
       6. OpenAlex green-OA PDF
       7. Europe PMC open-access full-text PDF
       8. CORE aggregated green-OA PDF (opt-in; needs CORE_API_KEY)
-      9. Abstract only
+      9. Publisher landing-page scrape (citation_pdf_url meta tag)
+     10. Custom user-configured resolvers (institutional OpenURL / proxy;
+         opt-in via BIOLIT_CUSTOM_RESOLVERS)
+     11. Abstract only
 
     *sections_wanted* filters which sections are concatenated (None = all).
 
@@ -469,7 +474,29 @@ def resolve_fulltext(
             if text:
                 return text, "core_pdf", artifacts
 
-    # 9. Abstract fallback
+    # 9. Publisher landing-page scrape — follow the DOI to the article page
+    #    and read its advertised citation_pdf_url. Catches OA PDFs the
+    #    aggregator APIs mislabel or never index. OA-only; preprints skipped.
+    page_url = paper.get("url")
+    if doi or page_url:
+        pdf_bytes = fetch_via_landing_page(doi=doi, url=None if doi else page_url)
+        if pdf_bytes:
+            artifacts["landing_page_pdf"] = pdf_bytes
+            text = _pdf_to_sections_text(pdf_bytes, sections_wanted, max_tokens)
+            if text:
+                return text, "landing_page_pdf", artifacts
+
+    # 10. Custom user-configured resolvers (institutional OpenURL / library
+    #     proxy). No-op unless BIOLIT_CUSTOM_RESOLVERS is configured.
+    if doi or page_url:
+        pdf_bytes = fetch_via_custom_resolvers(doi=doi, url=page_url)
+        if pdf_bytes:
+            artifacts["custom_resolver_pdf"] = pdf_bytes
+            text = _pdf_to_sections_text(pdf_bytes, sections_wanted, max_tokens)
+            if text:
+                return text, "custom_resolver_pdf", artifacts
+
+    # 11. Abstract fallback
     # For DOI-only preprints, fetch_record() already populated paper["abstract"]
     # from the preprint API, so this covers both PubMed and preprint cases.
     return paper.get("abstract", ""), "abstract", artifacts
@@ -688,6 +715,8 @@ def _persist_record_artifacts(
     _write_bytes(os.path.join(paper_dir, "openalex_fulltext.pdf"), fulltext_artifacts.get("openalex_pdf"))
     _write_bytes(os.path.join(paper_dir, "europepmc_oa_fulltext.pdf"), fulltext_artifacts.get("europepmc_oa_pdf"))
     _write_bytes(os.path.join(paper_dir, "core_fulltext.pdf"), fulltext_artifacts.get("core_pdf"))
+    _write_bytes(os.path.join(paper_dir, "landing_page_fulltext.pdf"), fulltext_artifacts.get("landing_page_pdf"))
+    _write_bytes(os.path.join(paper_dir, "custom_resolver_fulltext.pdf"), fulltext_artifacts.get("custom_resolver_pdf"))
 
 
 def _lookup_pmid_for_citations(paper: dict, id_type: str) -> str | None:
@@ -938,7 +967,8 @@ def _run_sequential_loop(
 _FULLTEXT_SOURCES = frozenset({
     "pmc_fulltext", "europepmc_fulltext", "preprint_fulltext",
     "unpaywall_pdf", "s2_pdf", "openalex_pdf", "europepmc_oa_pdf",
-    "core_pdf", "geo_linked_fulltext",
+    "core_pdf", "landing_page_pdf", "custom_resolver_pdf",
+    "geo_linked_fulltext",
 })
 
 

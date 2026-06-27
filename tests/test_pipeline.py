@@ -568,7 +568,9 @@ class TestResolveFulltextS2:
         mock_pmc.return_value = None
         mock_epmc.return_value = None
         with patch("biolit.pipeline.fetch_preprint", return_value=None), \
-             patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None):
+             patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
+             patch("biolit.pipeline.fetch_via_landing_page", return_value=None), \
+             patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=None):
             resolve_fulltext(paper_no_doi)
         mock_s2.assert_not_called()
 
@@ -665,6 +667,46 @@ class TestResolveFulltextOaPdfChain:
             for c in ctx:
                 c.stop()
 
+    def test_landing_page_used_when_core_misses(self, sample_pubmed_metadata):
+        ctx = self._patch_upstream_misses()
+        for c in ctx:
+            c.start()
+        try:
+            with patch("biolit.pipeline.fetch_via_openalex", return_value=None), \
+                 patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_core", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_landing_page", return_value=b"%PDF landing") as mock_lp, \
+                 patch("biolit.pipeline.fetch_via_custom_resolvers") as mock_custom, \
+                 patch("biolit.pipeline.parse_pdf_sections", return_value={"body": "Landing-page PDF text."}):
+                text, source, artifacts = resolve_fulltext(sample_pubmed_metadata)
+            assert source == "landing_page_pdf"
+            assert "landing_page_pdf" in artifacts
+            assert "Landing-page PDF text." in text
+            mock_lp.assert_called_once()
+            mock_custom.assert_not_called()  # short-circuits before custom resolvers
+        finally:
+            for c in ctx:
+                c.stop()
+
+    def test_custom_resolver_used_when_landing_page_misses(self, sample_pubmed_metadata):
+        ctx = self._patch_upstream_misses()
+        for c in ctx:
+            c.start()
+        try:
+            with patch("biolit.pipeline.fetch_via_openalex", return_value=None), \
+                 patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_core", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_landing_page", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=b"%PDF proxy"), \
+                 patch("biolit.pipeline.parse_pdf_sections", return_value={"body": "Custom resolver text."}):
+                text, source, artifacts = resolve_fulltext(sample_pubmed_metadata)
+            assert source == "custom_resolver_pdf"
+            assert "custom_resolver_pdf" in artifacts
+            assert "Custom resolver text." in text
+        finally:
+            for c in ctx:
+                c.stop()
+
     def test_abstract_fallback_when_all_pdf_sources_miss(self, sample_pubmed_metadata):
         ctx = self._patch_upstream_misses()
         for c in ctx:
@@ -672,7 +714,9 @@ class TestResolveFulltextOaPdfChain:
         try:
             with patch("biolit.pipeline.fetch_via_openalex", return_value=None), \
                  patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
-                 patch("biolit.pipeline.fetch_via_core", return_value=None):
+                 patch("biolit.pipeline.fetch_via_core", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_landing_page", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=None):
                 text, source, _ = resolve_fulltext(sample_pubmed_metadata)
             assert source == "abstract"
         finally:
