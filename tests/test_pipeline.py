@@ -570,7 +570,9 @@ class TestResolveFulltextS2:
         with patch("biolit.pipeline.fetch_preprint", return_value=None), \
              patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
              patch("biolit.pipeline.fetch_via_landing_page", return_value=None), \
-             patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=None):
+             patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=None), \
+             patch("biolit.pipeline.fetch_landing_page_html", return_value=None), \
+             patch("biolit.pipeline.classify_landing_page", return_value="abstract"):
             resolve_fulltext(paper_no_doi)
         mock_s2.assert_not_called()
 
@@ -591,7 +593,9 @@ class TestResolveFulltextS2:
         with patch("biolit.pipeline.fetch_preprint", return_value=None), \
              patch("biolit.pipeline.fetch_via_openalex", return_value=None), \
              patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
-             patch("biolit.pipeline.fetch_via_core", return_value=None):
+             patch("biolit.pipeline.fetch_via_core", return_value=None), \
+             patch("biolit.pipeline.fetch_landing_page_html", return_value=None), \
+             patch("biolit.pipeline.classify_landing_page", return_value="abstract"):
             text, source, _ = resolve_fulltext(paper)
         mock_pmc.assert_not_called()
         assert source == "abstract"
@@ -707,6 +711,52 @@ class TestResolveFulltextOaPdfChain:
             for c in ctx:
                 c.stop()
 
+    def test_landing_page_html_used_when_all_pdf_sources_miss(self, sample_pubmed_metadata):
+        """The HTML full-text step runs after every PDF source (incl. custom
+        resolvers) misses, and before the abstract fallback."""
+        ctx = self._patch_upstream_misses()
+        for c in ctx:
+            c.start()
+        try:
+            with patch("biolit.pipeline.fetch_via_openalex", return_value=None), \
+                 patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_core", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_landing_page", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=None), \
+                 patch("biolit.pipeline.fetch_landing_page_html",
+                       return_value="Methods. We recovered HTML full text from the landing page.") as mock_html, \
+                 patch("biolit.pipeline.classify_landing_page") as mock_classify:
+                text, source, artifacts = resolve_fulltext(sample_pubmed_metadata)
+            assert source == "landing_page_html"
+            assert "landing_page_html" in artifacts
+            assert "HTML full text" in text
+            mock_html.assert_called_once()
+            mock_classify.assert_not_called()  # short-circuits before abstract fallback
+        finally:
+            for c in ctx:
+                c.stop()
+
+    def test_abstract_fallback_records_paper_status(self, sample_pubmed_metadata):
+        """When even the HTML step misses, the abstract fallback stashes a
+        paper_status classification in artifacts so a caller knows WHY."""
+        ctx = self._patch_upstream_misses()
+        for c in ctx:
+            c.start()
+        try:
+            with patch("biolit.pipeline.fetch_via_openalex", return_value=None), \
+                 patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_core", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_landing_page", return_value=None), \
+                 patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=None), \
+                 patch("biolit.pipeline.fetch_landing_page_html", return_value=None), \
+                 patch("biolit.pipeline.classify_landing_page", return_value="bot_blocked"):
+                text, source, artifacts = resolve_fulltext(sample_pubmed_metadata)
+            assert source == "abstract"
+            assert artifacts.get("paper_status") == "bot_blocked"
+        finally:
+            for c in ctx:
+                c.stop()
+
     def test_abstract_fallback_when_all_pdf_sources_miss(self, sample_pubmed_metadata):
         ctx = self._patch_upstream_misses()
         for c in ctx:
@@ -716,7 +766,9 @@ class TestResolveFulltextOaPdfChain:
                  patch("biolit.pipeline.fetch_europepmc_pdf", return_value=None), \
                  patch("biolit.pipeline.fetch_via_core", return_value=None), \
                  patch("biolit.pipeline.fetch_via_landing_page", return_value=None), \
-                 patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=None):
+                 patch("biolit.pipeline.fetch_via_custom_resolvers", return_value=None), \
+                 patch("biolit.pipeline.fetch_landing_page_html", return_value=None), \
+                 patch("biolit.pipeline.classify_landing_page", return_value="abstract"):
                 text, source, _ = resolve_fulltext(sample_pubmed_metadata)
             assert source == "abstract"
         finally:

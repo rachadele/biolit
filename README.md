@@ -156,7 +156,8 @@ Full-text retrieval runs automatically for every PMID and DOI (including preprin
 8. CORE aggregated green-OA PDF (opt-in; needs `CORE_API_KEY`)
 9. Publisher landing-page scrape (the `citation_pdf_url` meta tag; key-less)
 10. Custom resolvers (institutional OpenURL / library proxy; opt-in via `BIOLIT_CUSTOM_RESOLVERS`)
-11. Abstract fallback
+11. Publisher landing-page **HTML** full text (the `citation_fulltext_html_url` meta tag; key-less)
+12. Abstract fallback
 
 Steps 6-9 are all open-access-only (green-OA author manuscripts,
 institutional-repository copies, and the publisher's own advertised OA
@@ -168,7 +169,15 @@ Highwire / Google-Scholar standard) — this catches OA PDFs the aggregator
 APIs mislabel or never index. bioRxiv / medRxiv are skipped there (their
 servers block agents; the preprint step above covers them). Step 10 is
 the seam for *your own authorized* access — see
-[Custom full-text fetchers](#custom-full-text-fetchers).
+[Custom full-text fetchers](#custom-full-text-fetchers). Step 11 is the
+HTML counterpart of step 9: when no downloadable PDF exists at all, it
+extracts the **article body text** from the publisher's full HTML page
+(the `citation_fulltext_html_url` Highwire signal that PLOS / eLife / BMC
+/ Frontiers and many society journals set) — recovering Methods text for
+OA papers the PDF chain can never reach. When even that misses, the
+abstract fallback records a `paper_status` classification (`bot_blocked`
+/ `js_shell` / `abstract`) in the per-record artifacts so a caller can
+read *why* full text was not reached.
 
 To enable Unpaywall (step 4), pass your email:
 
@@ -216,7 +225,7 @@ With default fields, the CSV columns are:
 | `pmid` | PubMed ID (null for unindexed preprints) |
 | `doi` | DOI (null for GEO records) |
 | `geo_accession` | GEO accession (null for non-GEO records) |
-| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `openalex_pdf`, `europepmc_oa_pdf`, `core_pdf`, `landing_page_pdf`, `custom_resolver_pdf`, `geo_linked_fulltext`, `geo_linked_abstract`, `geo_record`) |
+| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `openalex_pdf`, `europepmc_oa_pdf`, `core_pdf`, `landing_page_pdf`, `custom_resolver_pdf`, `landing_page_html`, `geo_linked_fulltext`, `geo_linked_abstract`, `geo_record`) |
 | `citation_count` | Citation count from Semantic Scholar (null if not found) |
 | `methodology` | General method (e.g. GWAS, scRNA-seq, proteomics) |
 | `sample_type` | Tissue/sample type and origin |
@@ -333,9 +342,9 @@ result = screen_paper(client, paper, "Is this about schizophrenia genomics?", pa
 ## Custom full-text fetchers
 
 The built-in chain (PMC → Europe PMC → preprint → Unpaywall → Semantic
-Scholar → OpenAlex → Europe PMC OA PDF → CORE → landing-page scrape →
-custom resolvers → abstract) leaves coverage gaps for closed-access or
-recently-published work. You can plug in additional sources of full text
+Scholar → OpenAlex → Europe PMC OA PDF → CORE → landing-page PDF scrape →
+custom resolvers → landing-page HTML → abstract) leaves coverage gaps for
+closed-access or recently-published work. You can plug in additional sources of full text
 — a Zotero library, a flat directory of PDFs, an institutional
 full-text database — without forking biolit.
 
@@ -361,6 +370,32 @@ the preprint step covers them). Source label: `landing_page_pdf`.
 # Optional: override the browser User-Agent used for the landing-page
 # request (some publishers serve a stub or 403 to non-browser agents).
 export BIOLIT_LANDING_USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+```
+
+**Landing-page HTML full text (step 11).** Always on, key-less. The HTML
+counterpart of step 9. When no downloadable PDF was found anywhere, this
+follows the DOI to the article page, reads the publisher's
+`<meta name="citation_fulltext_html_url">` "a full HTML version exists"
+signal (set by PLOS / eLife / BMC / Frontiers and many society journals),
+and extracts the **article body text** — dropping nav / scripts / styles /
+chrome and preferring an `<article>` / `<main>` container. This recovers
+Methods text for OA papers that have no PDF at all. Bot-challenge pages
+(Cloudflare "Just a moment") and JavaScript-rendered shells are rejected
+rather than returned as "text". bioRxiv / medRxiv are skipped (the preprint
+step covers them). Source label: `landing_page_html`. It shares the
+`BIOLIT_LANDING_USER_AGENT` override above.
+
+When the whole chain misses, the abstract fallback classifies *why* full
+text was not reached (`bot_blocked` / `js_shell` / `abstract`) and records
+it as `paper_status` in the per-record artifacts, so a downstream caller
+can distinguish "blocked by a bot challenge" from "publisher serves only a
+JS shell" from "genuinely abstract-only".
+
+```bash
+# Optional: visible-character floor below which a fetched landing page is
+# treated as a JS-rendered shell (no server-rendered article body) rather
+# than full text. Default 2000.
+export BIOLIT_JS_SHELL_CHAR_THRESHOLD=2000
 ```
 
 **Custom resolvers (step 10).** Opt-in. This is the seam for *your own

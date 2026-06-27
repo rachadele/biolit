@@ -17,6 +17,7 @@ from biolit.fetchers.openalex import fetch_via_openalex
 from biolit.fetchers.europepmc_pdf import fetch_europepmc_pdf
 from biolit.fetchers.core import fetch_via_core
 from biolit.fetchers.landing_page import fetch_via_landing_page
+from biolit.fetchers.landing_page_html import fetch_landing_page_html, classify_landing_page
 from biolit.fetchers.custom_resolvers import fetch_via_custom_resolvers
 from biolit.llm.base import BaseLLMClient
 from biolit.parsers.jats import parse_jats_sections
@@ -365,7 +366,10 @@ def resolve_fulltext(
       9. Publisher landing-page scrape (citation_pdf_url meta tag)
      10. Custom user-configured resolvers (institutional OpenURL / proxy;
          opt-in via BIOLIT_CUSTOM_RESOLVERS)
-     11. Abstract only
+     11. Publisher landing-page HTML full text (citation_fulltext_html_url;
+         article body text for OA papers with no downloadable PDF)
+     12. Abstract only (with a paper_status classification — bot_blocked /
+         js_shell / abstract — stashed in artifacts when a landing page exists)
 
     *sections_wanted* filters which sections are concatenated (None = all).
 
@@ -496,9 +500,28 @@ def resolve_fulltext(
             if text:
                 return text, "custom_resolver_pdf", artifacts
 
-    # 11. Abstract fallback
+    # 11. Publisher landing-page HTML full text — recover article body TEXT
+    #     (not a PDF) for OA papers that have a full HTML version but no
+    #     downloadable PDF (PLOS, eLife, BMC, Frontiers, many society
+    #     journals). This is where Methods text often lives, so it catches
+    #     content every PDF source above misses. OA-only; preprints skipped.
+    if doi or page_url:
+        html_text = fetch_landing_page_html(doi=doi, url=None if doi else page_url)
+        if html_text:
+            artifacts["landing_page_html"] = html_text.encode("utf-8")
+            return html_text[: max_tokens * 4], "landing_page_html", artifacts
+
+    # 12. Abstract fallback
     # For DOI-only preprints, fetch_record() already populated paper["abstract"]
     # from the preprint API, so this covers both PubMed and preprint cases.
+    # Classify *why* full text was not reached (bot_blocked / js_shell /
+    # abstract) so a caller (e.g. the gemma pipeline's paper_status) can read
+    # it from the artifacts; falls back to "abstract" when there's nothing to
+    # probe or the probe fails.
+    if doi or page_url:
+        artifacts["paper_status"] = classify_landing_page(
+            doi=doi, url=None if doi else page_url
+        )
     return paper.get("abstract", ""), "abstract", artifacts
 
 
@@ -716,6 +739,7 @@ def _persist_record_artifacts(
     _write_bytes(os.path.join(paper_dir, "europepmc_oa_fulltext.pdf"), fulltext_artifacts.get("europepmc_oa_pdf"))
     _write_bytes(os.path.join(paper_dir, "core_fulltext.pdf"), fulltext_artifacts.get("core_pdf"))
     _write_bytes(os.path.join(paper_dir, "landing_page_fulltext.pdf"), fulltext_artifacts.get("landing_page_pdf"))
+    _write_bytes(os.path.join(paper_dir, "landing_page_fulltext_html.txt"), fulltext_artifacts.get("landing_page_html"))
     _write_bytes(os.path.join(paper_dir, "custom_resolver_fulltext.pdf"), fulltext_artifacts.get("custom_resolver_pdf"))
 
 
@@ -968,6 +992,7 @@ _FULLTEXT_SOURCES = frozenset({
     "pmc_fulltext", "europepmc_fulltext", "preprint_fulltext",
     "unpaywall_pdf", "s2_pdf", "openalex_pdf", "europepmc_oa_pdf",
     "core_pdf", "landing_page_pdf", "custom_resolver_pdf",
+    "landing_page_html",
     "geo_linked_fulltext",
 })
 
