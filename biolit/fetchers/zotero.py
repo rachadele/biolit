@@ -67,11 +67,31 @@ class ZoteroFetcher:
     def _headers(self) -> dict:
         return {"Zotero-API-Key": self.api_key, "Zotero-API-Version": "3"}
 
-    def _search_by_query(self, query: str) -> list[dict]:
-        """Free-text search for an item; results contain the item key."""
+    def _search_by_query(self, query: str, limit: int = 25) -> list[dict]:
+        """Free-text search for an item; results contain the item key.
+
+        ``limit`` defaults to 25 (up from 5) because ``qmode=everything``
+        also matches attachment full-text — for popular papers, the top
+        few hits are often PDFs that *cite* the DOI rather than the
+        target item itself.
+        """
         r = requests.get(
             f"{self._api_base()}/items",
-            params={"q": query, "qmode": "everything", "limit": 5},
+            params={"q": query, "qmode": "everything", "limit": limit},
+            headers=self._headers(),
+            timeout=self.timeout,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def _list_items_by_type(self, item_type: str, limit: int = 100) -> list[dict]:
+        """List items of a given itemType (no query). Used as a fallback
+        when ``qmode=everything`` misses a record — notably preprint
+        items whose locally-stored PDFs Zotero hasn't full-text indexed.
+        """
+        r = requests.get(
+            f"{self._api_base()}/items",
+            params={"itemType": item_type, "limit": limit},
             headers=self._headers(),
             timeout=self.timeout,
         )
@@ -133,9 +153,26 @@ class ZoteroFetcher:
         cite the DOI we asked about. To match correctly we resolve every
         attachment hit to its parent item and compare against the parent's
         DOI / extra fields.
+
+        Some itemTypes (notably ``preprint``) are routinely missed by the
+        q-search — Zotero's full-text indexer doesn't always cover locally
+        stored PDFs, and metadata-only matches against the ``DOI`` field
+        aren't reliable for every itemType. When the q-search yields no
+        match, fall back to listing preprints in the library and scanning
+        their ``DOI`` / ``extra`` fields directly.
         """
         doi = (paper.get("doi") or "").strip()
         pmid = (paper.get("pmid") or "").strip()
+
+        def _matches(candidate: dict) -> bool:
+            cdata = candidate.get("data", {})
+            cand_doi = (cdata.get("DOI") or "").lower()
+            cand_extra = (cdata.get("extra") or "").lower()
+            if doi and cand_doi == doi.lower():
+                return True
+            if pmid and (f"pmid: {pmid}" in cand_extra or f"pmid:{pmid}" in cand_extra):
+                return True
+            return False
 
         for query in (doi, pmid):
             if not query:
@@ -158,13 +195,19 @@ class ZoteroFetcher:
                     candidate = parent
                 else:
                     candidate = hit
-                cdata = candidate.get("data", {})
-                cand_doi = (cdata.get("DOI") or "").lower()
-                cand_extra = (cdata.get("extra") or "").lower()
-                if doi and cand_doi == doi.lower():
+                if _matches(candidate):
                     return candidate
-                if pmid and (f"pmid: {pmid}" in cand_extra or f"pmid:{pmid}" in cand_extra):
-                    return candidate
+
+        if not doi and not pmid:
+            return None
+        try:
+            preprints = self._list_items_by_type("preprint")
+        except Exception as e:
+            print(f"  [zotero] preprint listing error: {e}", file=sys.stderr)
+            return None
+        for item in preprints:
+            if _matches(item):
+                return item
         return None
 
     def __call__(self, ctx: FetchContext) -> FetchResult | None:

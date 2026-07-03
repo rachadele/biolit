@@ -218,6 +218,78 @@ def test_zotero_does_not_return_unrelated_attachment_hits(monkeypatch):
     assert z._find_item({"doi": "10.1234/we-want-this", "pmid": None}) is None
 
 
+def test_zotero_finds_preprint_when_q_search_misses(monkeypatch):
+    """Preprint items are routinely missed by q=<DOI>&qmode=everything
+    (Zotero hasn't full-text indexed the local PDF). The fetcher must
+    fall back to listing itemType=preprint and matching DOIs directly.
+    """
+    from biolit.fetchers.zotero import ZoteroFetcher
+
+    z = ZoteroFetcher(api_key="k", user_id="123")
+    target_doi = "10.1101/2025.03.17.25324098"
+
+    calls = {"q_search": 0, "preprint_list": 0}
+
+    def fake_get(url, **kwargs):
+        params = kwargs.get("params") or {}
+        if "q" in params:
+            calls["q_search"] += 1
+            return _mock_response(200, json_body=[])
+        if params.get("itemType") == "preprint":
+            calls["preprint_list"] += 1
+            return _mock_response(200, json_body=[
+                {
+                    "key": "OTHER_PREPRINT",
+                    "data": {"itemType": "preprint", "DOI": "10.1101/different"},
+                },
+                {
+                    "key": "4UA6SYH7",
+                    "data": {"itemType": "preprint", "DOI": target_doi},
+                },
+            ])
+        raise AssertionError(f"unexpected request: {url} {params}")
+
+    monkeypatch.setattr("biolit.fetchers.zotero.requests.get", fake_get)
+    result = z._find_item({"doi": target_doi, "pmid": None})
+    assert result is not None
+    assert result["key"] == "4UA6SYH7"
+    assert calls["q_search"] >= 1
+    assert calls["preprint_list"] == 1
+
+
+def test_zotero_preprint_fallback_skips_when_no_identifiers(monkeypatch):
+    """If neither DOI nor PMID is set, don't bother listing preprints."""
+    from biolit.fetchers.zotero import ZoteroFetcher
+
+    z = ZoteroFetcher(api_key="k", user_id="123")
+
+    def fake_get(url, **kwargs):
+        raise AssertionError(f"no API call expected; got {url}")
+
+    monkeypatch.setattr("biolit.fetchers.zotero.requests.get", fake_get)
+    assert z._find_item({"doi": None, "pmid": None}) is None
+
+
+def test_zotero_preprint_fallback_returns_none_when_no_match(monkeypatch):
+    """Preprint list exists but none match — return None, don't crash."""
+    from biolit.fetchers.zotero import ZoteroFetcher
+
+    z = ZoteroFetcher(api_key="k", user_id="123")
+
+    def fake_get(url, **kwargs):
+        params = kwargs.get("params") or {}
+        if "q" in params:
+            return _mock_response(200, json_body=[])
+        if params.get("itemType") == "preprint":
+            return _mock_response(200, json_body=[
+                {"key": "X", "data": {"itemType": "preprint", "DOI": "10.1/other"}},
+            ])
+        raise AssertionError(f"unexpected request: {url} {params}")
+
+    monkeypatch.setattr("biolit.fetchers.zotero.requests.get", fake_get)
+    assert z._find_item({"doi": "10.1/missing", "pmid": None}) is None
+
+
 def test_zotero_download_falls_back_to_local_storage(monkeypatch, tmp_path):
     """When /file returns 404, read the PDF from local Zotero storage."""
     from biolit.fetchers.zotero import ZoteroFetcher
