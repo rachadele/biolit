@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
@@ -44,6 +44,11 @@ ZOTERO_API_BASE = "https://api.zotero.org"
 DEFAULT_ZOTERO_DATA_DIR = "~/Zotero"
 
 
+class ZoteroUnavailable(RuntimeError):
+    """Raised when the fetcher has tripped its circuit-breaker and is
+    refusing further network calls (see :meth:`ZoteroFetcher._request`)."""
+
+
 @dataclass
 class ZoteroFetcher:
     """A Zotero-backed fetcher. Registers itself when configured via env."""
@@ -52,10 +57,49 @@ class ZoteroFetcher:
     user_id: str | None = None
     group_id: str | None = None
     timeout: int = 20
+    # Circuit-breaker: after this many CONSECUTIVE network timeouts /
+    # connection failures the fetcher disables itself for the rest of the
+    # process. Without this, an unreachable api.zotero.org blocks every
+    # request for ``timeout`` seconds with no cap — a 400-study eval run
+    # hung ~2h (retrying one dead endpoint at 20s/call) in 2026-07 before
+    # this guard was added.
+    max_consecutive_timeouts: int = 3
+    _consecutive_timeouts: int = field(default=0, init=False, repr=False)
+    _disabled: bool = field(default=False, init=False, repr=False)
 
     @property
     def __name__(self) -> str:  # for logging
         return "zotero"
+
+    def _request(self, url: str, **kwargs) -> requests.Response:
+        """Single choke-point for every Zotero web-API GET.
+
+        Implements the per-process circuit-breaker: once the fetcher has
+        tripped it raises :class:`ZoteroUnavailable` immediately without
+        touching the network; a run of consecutive timeouts / connection
+        failures trips it; any success resets the streak. Defaults
+        ``timeout`` and auth ``headers`` so callers stay terse.
+        """
+        if self._disabled:
+            raise ZoteroUnavailable("zotero fetcher disabled after repeated timeouts")
+        kwargs.setdefault("timeout", self.timeout)
+        kwargs.setdefault("headers", self._headers())
+        try:
+            r = requests.get(url, **kwargs)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            self._consecutive_timeouts += 1
+            if self._consecutive_timeouts >= self.max_consecutive_timeouts and not self._disabled:
+                self._disabled = True
+                print(
+                    f"  [zotero] disabling fetcher after "
+                    f"{self._consecutive_timeouts} consecutive network failures "
+                    f"(last: {type(e).__name__}) — api.zotero.org unreachable; "
+                    f"remaining papers skip Zotero",
+                    file=sys.stderr,
+                )
+            raise
+        self._consecutive_timeouts = 0
+        return r
 
     def _api_base(self) -> str:
         if self.group_id:
@@ -69,42 +113,30 @@ class ZoteroFetcher:
 
     def _search_by_query(self, query: str) -> list[dict]:
         """Free-text search for an item; results contain the item key."""
-        r = requests.get(
+        r = self._request(
             f"{self._api_base()}/items",
             params={"q": query, "qmode": "everything", "limit": 5},
-            headers=self._headers(),
-            timeout=self.timeout,
         )
         r.raise_for_status()
         return r.json()
 
     def _children(self, item_key: str) -> list[dict]:
-        r = requests.get(
-            f"{self._api_base()}/items/{item_key}/children",
-            headers=self._headers(),
-            timeout=self.timeout,
-        )
+        r = self._request(f"{self._api_base()}/items/{item_key}/children")
         if r.status_code == 404:
             return []
         r.raise_for_status()
         return r.json()
 
     def _get_item(self, item_key: str) -> dict | None:
-        r = requests.get(
-            f"{self._api_base()}/items/{item_key}",
-            headers=self._headers(),
-            timeout=self.timeout,
-        )
+        r = self._request(f"{self._api_base()}/items/{item_key}")
         if r.status_code == 404:
             return None
         r.raise_for_status()
         return r.json()
 
     def _download_attachment(self, attachment_key: str, filename: str | None = None) -> bytes | None:
-        r = requests.get(
+        r = self._request(
             f"{self._api_base()}/items/{attachment_key}/file",
-            headers=self._headers(),
-            timeout=self.timeout,
             allow_redirects=True,
         )
         if r.status_code == 200:
@@ -172,6 +204,11 @@ class ZoteroFetcher:
         # importing at module load time creates an import cycle.
         from biolit.parsers.pdf import parse_pdf_sections
         from biolit.parsers.utils import DEFAULT_MAX_TOKENS, select_sections
+
+        # Circuit-breaker tripped on an earlier paper — don't touch the
+        # network at all; fall through to the next fetcher in the chain.
+        if self._disabled:
+            return None
 
         item = self._find_item(ctx.paper)
         if item is None:
