@@ -3,6 +3,7 @@ import csv
 import json
 import os
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 
 from biolit.fetchers._hooks import FetchContext, run_registered_fetchers
@@ -12,6 +13,12 @@ from biolit.fetchers.europepmc import fetch_europepmc_fulltext
 from biolit.fetchers.preprints import fetch_preprint, fetch_preprint_metadata
 from biolit.fetchers.unpaywall import fetch_via_unpaywall
 from biolit.fetchers.semantic_scholar import fetch_s2_pdf, get_citation_count
+from biolit.fetchers.openalex import fetch_via_openalex
+from biolit.fetchers.europepmc_pdf import fetch_europepmc_pdf
+from biolit.fetchers.core import fetch_via_core
+from biolit.fetchers.landing_page import fetch_via_landing_page
+from biolit.fetchers.landing_page_html import fetch_landing_page_html, classify_landing_page
+from biolit.fetchers.custom_resolvers import fetch_via_custom_resolvers
 from biolit.llm.base import BaseLLMClient
 from biolit.parsers.jats import parse_jats_sections
 from biolit.parsers.pdf import parse_pdf_sections
@@ -317,6 +324,28 @@ def fetch_record(id_str: str) -> dict | None:
 # Full-text resolution
 # ---------------------------------------------------------------------------
 
+def _pdf_to_sections_text(
+    pdf_bytes: bytes,
+    sections_wanted: list[str] | None,
+    max_tokens: int,
+) -> str | None:
+    """Parse *pdf_bytes* into section text, or None if empty / unparseable.
+
+    Mirrors the inline Unpaywall / S2 PDF-parsing path so every PDF source
+    returns text through the same ``parse_pdf_sections`` + ``select_sections``
+    pipeline. A missing ``pdfminer.six`` is downgraded to a warning + None
+    rather than an exception, matching the existing behaviour.
+    """
+    try:
+        secs = parse_pdf_sections(pdf_bytes)
+    except ImportError:
+        print("  [warning] pdfminer.six not installed; skipping PDF parsing", file=sys.stderr)
+        return None
+    if secs:
+        return select_sections(secs, sections_wanted, max_tokens)
+    return None
+
+
 def resolve_fulltext(
     paper: dict,
     unpaywall_email: str | None = None,
@@ -331,7 +360,16 @@ def resolve_fulltext(
       3. Preprint JATS XML (bioRxiv / medRxiv)
       4. Unpaywall PDF
       5. Semantic Scholar open-access PDF
-      6. Abstract only
+      6. OpenAlex green-OA PDF
+      7. Europe PMC open-access full-text PDF
+      8. CORE aggregated green-OA PDF (opt-in; needs CORE_API_KEY)
+      9. Publisher landing-page scrape (citation_pdf_url meta tag)
+     10. Custom user-configured resolvers (institutional OpenURL / proxy;
+         opt-in via BIOLIT_CUSTOM_RESOLVERS)
+     11. Publisher landing-page HTML full text (citation_fulltext_html_url;
+         article body text for OA papers with no downloadable PDF)
+     12. Abstract only (with a paper_status classification — bot_blocked /
+         js_shell / abstract — stashed in artifacts when a landing page exists)
 
     *sections_wanted* filters which sections are concatenated (None = all).
 
@@ -412,9 +450,78 @@ def resolve_fulltext(
             except ImportError:
                 print("  [warning] pdfminer.six not installed; skipping PDF parsing", file=sys.stderr)
 
-    # 6. Abstract fallback
+    # 6. OpenAlex green-OA PDF — author manuscripts (often with full Methods)
+    #    that Unpaywall / S2 miss. Key-less; polite pool via unpaywall_email.
+    if doi:
+        pdf_bytes = fetch_via_openalex(doi, mailto=unpaywall_email)
+        if pdf_bytes:
+            artifacts["openalex_pdf"] = pdf_bytes
+            text = _pdf_to_sections_text(pdf_bytes, sections_wanted, max_tokens)
+            if text:
+                return text, "openalex_pdf", artifacts
+
+    # 7. Europe PMC open-access full-text PDF (OA subset only)
+    if pmid or doi:
+        pdf_bytes = fetch_europepmc_pdf(pmid=pmid, doi=doi)
+        if pdf_bytes:
+            artifacts["europepmc_oa_pdf"] = pdf_bytes
+            text = _pdf_to_sections_text(pdf_bytes, sections_wanted, max_tokens)
+            if text:
+                return text, "europepmc_oa_pdf", artifacts
+
+    # 8. CORE aggregated green-OA PDF — opt-in (no-op unless CORE_API_KEY set)
+    if doi:
+        pdf_bytes = fetch_via_core(doi)
+        if pdf_bytes:
+            artifacts["core_pdf"] = pdf_bytes
+            text = _pdf_to_sections_text(pdf_bytes, sections_wanted, max_tokens)
+            if text:
+                return text, "core_pdf", artifacts
+
+    # 9. Publisher landing-page scrape — follow the DOI to the article page
+    #    and read its advertised citation_pdf_url. Catches OA PDFs the
+    #    aggregator APIs mislabel or never index. OA-only; preprints skipped.
+    page_url = paper.get("url")
+    if doi or page_url:
+        pdf_bytes = fetch_via_landing_page(doi=doi, url=None if doi else page_url)
+        if pdf_bytes:
+            artifacts["landing_page_pdf"] = pdf_bytes
+            text = _pdf_to_sections_text(pdf_bytes, sections_wanted, max_tokens)
+            if text:
+                return text, "landing_page_pdf", artifacts
+
+    # 10. Custom user-configured resolvers (institutional OpenURL / library
+    #     proxy). No-op unless BIOLIT_CUSTOM_RESOLVERS is configured.
+    if doi or page_url:
+        pdf_bytes = fetch_via_custom_resolvers(doi=doi, url=page_url)
+        if pdf_bytes:
+            artifacts["custom_resolver_pdf"] = pdf_bytes
+            text = _pdf_to_sections_text(pdf_bytes, sections_wanted, max_tokens)
+            if text:
+                return text, "custom_resolver_pdf", artifacts
+
+    # 11. Publisher landing-page HTML full text — recover article body TEXT
+    #     (not a PDF) for OA papers that have a full HTML version but no
+    #     downloadable PDF (PLOS, eLife, BMC, Frontiers, many society
+    #     journals). This is where Methods text often lives, so it catches
+    #     content every PDF source above misses. OA-only; preprints skipped.
+    if doi or page_url:
+        html_text = fetch_landing_page_html(doi=doi, url=None if doi else page_url)
+        if html_text:
+            artifacts["landing_page_html"] = html_text.encode("utf-8")
+            return html_text[: max_tokens * 4], "landing_page_html", artifacts
+
+    # 12. Abstract fallback
     # For DOI-only preprints, fetch_record() already populated paper["abstract"]
     # from the preprint API, so this covers both PubMed and preprint cases.
+    # Classify *why* full text was not reached (bot_blocked / js_shell /
+    # abstract) so a caller (e.g. the gemma pipeline's paper_status) can read
+    # it from the artifacts; falls back to "abstract" when there's nothing to
+    # probe or the probe fails.
+    if doi or page_url:
+        artifacts["paper_status"] = classify_landing_page(
+            doi=doi, url=None if doi else page_url
+        )
     return paper.get("abstract", ""), "abstract", artifacts
 
 
@@ -628,6 +735,12 @@ def _persist_record_artifacts(
     _write_bytes(os.path.join(paper_dir, "preprint_fulltext.xml"), fulltext_artifacts.get("preprint_xml"))
     _write_bytes(os.path.join(paper_dir, "unpaywall_fulltext.pdf"), fulltext_artifacts.get("unpaywall_pdf"))
     _write_bytes(os.path.join(paper_dir, "s2_fulltext.pdf"), fulltext_artifacts.get("s2_pdf"))
+    _write_bytes(os.path.join(paper_dir, "openalex_fulltext.pdf"), fulltext_artifacts.get("openalex_pdf"))
+    _write_bytes(os.path.join(paper_dir, "europepmc_oa_fulltext.pdf"), fulltext_artifacts.get("europepmc_oa_pdf"))
+    _write_bytes(os.path.join(paper_dir, "core_fulltext.pdf"), fulltext_artifacts.get("core_pdf"))
+    _write_bytes(os.path.join(paper_dir, "landing_page_fulltext.pdf"), fulltext_artifacts.get("landing_page_pdf"))
+    _write_bytes(os.path.join(paper_dir, "landing_page_fulltext_html.txt"), fulltext_artifacts.get("landing_page_html"))
+    _write_bytes(os.path.join(paper_dir, "custom_resolver_fulltext.pdf"), fulltext_artifacts.get("custom_resolver_pdf"))
 
 
 def _lookup_pmid_for_citations(paper: dict, id_type: str) -> str | None:
@@ -868,6 +981,120 @@ def _run_sequential_loop(
             results.append(_build_metadata_only_result(paper, source, id_type))
 
     return results, stubs
+
+
+# ---------------------------------------------------------------------------
+# High-level paper fetch — resolve best-available full text from any of
+# accession / DOI / PMID, with a bare-PMID last-resort fallback.
+# ---------------------------------------------------------------------------
+
+_FULLTEXT_SOURCES = frozenset({
+    "pmc_fulltext", "europepmc_fulltext", "preprint_fulltext",
+    "unpaywall_pdf", "s2_pdf", "openalex_pdf", "europepmc_oa_pdf",
+    "core_pdf", "landing_page_pdf", "custom_resolver_pdf",
+    "landing_page_html",
+    "geo_linked_fulltext",
+})
+
+
+@dataclass
+class PaperResult:
+    """Outcome of :func:`fetch_paper`. ``is_fulltext`` is True when ``source``
+    is a real full-text source rather than a bare abstract / metadata record."""
+
+    text: str
+    source: str
+    is_fulltext: bool
+    pmid: str | None = None
+    doi: str | None = None
+    title: str | None = None
+
+
+def _resolve_one(
+    record_id: str | None,
+    *,
+    fallback_pmid: str | None = None,
+    unpaywall_email: str | None = None,
+    sections_wanted: list[str] | None = None,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+) -> PaperResult:
+    """Resolve a single id (accession / DOI / PMID) to a :class:`PaperResult`."""
+    if not record_id:
+        return PaperResult("", "no_id", False, fallback_pmid, None, None)
+    paper = fetch_record(record_id)
+    if not paper or paper.get("error"):
+        return PaperResult("", "no_record", False, fallback_pmid, None, None)
+    resolver = _resolve_geo_fulltext if paper.get("geo_accession") else resolve_fulltext
+    try:
+        text, source, _artifacts = resolver(
+            paper,
+            unpaywall_email=unpaywall_email,
+            sections_wanted=sections_wanted,
+            max_tokens=max_tokens,
+        )
+    except Exception as e:  # noqa: BLE001 — a fetch failure is not fatal
+        return PaperResult(
+            "", f"resolve_error:{type(e).__name__}", False,
+            paper.get("pmid") or fallback_pmid, paper.get("doi"), paper.get("title"),
+        )
+    return PaperResult(
+        text or "", source, source in _FULLTEXT_SOURCES,
+        (str(paper.get("pmid")) if paper.get("pmid") else fallback_pmid),
+        paper.get("doi"), paper.get("title"),
+    )
+
+
+def fetch_paper(
+    accession: str | None = None,
+    pmid: str | None = None,
+    doi: str | None = None,
+    *,
+    unpaywall_email: str | None = None,
+    sections_wanted: list[str] | None = None,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+) -> PaperResult:
+    """Fetch best-available full text given any of accession / PMID / DOI.
+
+    Resolution order — stop at the first that yields real full text:
+
+      1. **Accession** (e.g. a GEO GSE) — walks the record's linked PMIDs.
+      2. **DOI** — the preprint path: a caller's finder may resolve a
+         bioRxiv / medRxiv DOI with no PMID, and the preprint fetcher pulls
+         JATS for ``10.1101/`` etc.
+      3. **Bare PMID** — last-resort fallback. A GEO record often has NO
+         linked publication (the submitter never linked it), so the
+         accession path yields only a metadata record — but a caller (e.g. a
+         title / author search) may have resolved the real PMID. Fetch the
+         paper for that PMID directly.
+
+    Returns the best :class:`PaperResult` across the attempted ids: full text
+    if any path found it, else the longest non-empty text, else the primary.
+    """
+    primary = _resolve_one(
+        (accession or pmid or "").strip() or None,
+        fallback_pmid=pmid, unpaywall_email=unpaywall_email,
+        sections_wanted=sections_wanted, max_tokens=max_tokens,
+    )
+    if primary.is_fulltext:
+        return primary
+    best = primary
+    if doi and doi.strip():
+        secondary = _resolve_one(
+            doi.strip(), fallback_pmid=pmid, unpaywall_email=unpaywall_email,
+            sections_wanted=sections_wanted, max_tokens=max_tokens,
+        )
+        if secondary.is_fulltext:
+            return secondary
+        if secondary.text and not best.text:
+            best = secondary
+    if pmid and pmid.strip() and (accession or doi):
+        tertiary = _resolve_one(
+            pmid.strip(), fallback_pmid=pmid, unpaywall_email=unpaywall_email,
+            sections_wanted=sections_wanted, max_tokens=max_tokens,
+        )
+        if tertiary.is_fulltext or (tertiary.text and not best.text):
+            best = tertiary
+    return best
 
 
 def run(

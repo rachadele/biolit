@@ -151,7 +151,33 @@ Full-text retrieval runs automatically for every PMID and DOI (including preprin
 3. Preprint XML (bioRxiv / medRxiv)
 4. Unpaywall PDF (requires `--unpaywall-email`)
 5. Semantic Scholar open-access PDF
-6. Abstract fallback
+6. OpenAlex green-OA PDF (author manuscripts Unpaywall/S2 miss; key-less)
+7. Europe PMC open-access full-text PDF (OA subset)
+8. CORE aggregated green-OA PDF (opt-in; needs `CORE_API_KEY`)
+9. Publisher landing-page scrape (the `citation_pdf_url` meta tag; key-less)
+10. Custom resolvers (institutional OpenURL / library proxy; opt-in via `BIOLIT_CUSTOM_RESOLVERS`)
+11. Publisher landing-page **HTML** full text (the `citation_fulltext_html_url` meta tag; key-less)
+12. Abstract fallback
+
+Steps 6-9 are all open-access-only (green-OA author manuscripts,
+institutional-repository copies, and the publisher's own advertised OA
+PDF link) — never a paywall bypass. OpenAlex, Europe PMC, and the
+landing-page scrape need no key; CORE is a no-op unless `CORE_API_KEY` is
+set. The landing-page scrape (step 9) follows the DOI to the article page
+and reads the `citation_pdf_url` link the publisher itself embeds (the
+Highwire / Google-Scholar standard) — this catches OA PDFs the aggregator
+APIs mislabel or never index. bioRxiv / medRxiv are skipped there (their
+servers block agents; the preprint step above covers them). Step 10 is
+the seam for *your own authorized* access — see
+[Custom full-text fetchers](#custom-full-text-fetchers). Step 11 is the
+HTML counterpart of step 9: when no downloadable PDF exists at all, it
+extracts the **article body text** from the publisher's full HTML page
+(the `citation_fulltext_html_url` Highwire signal that PLOS / eLife / BMC
+/ Frontiers and many society journals set) — recovering Methods text for
+OA papers the PDF chain can never reach. When even that misses, the
+abstract fallback records a `paper_status` classification (`bot_blocked`
+/ `js_shell` / `abstract`) in the per-record artifacts so a caller can
+read *why* full text was not reached.
 
 To enable Unpaywall (step 4), pass your email:
 
@@ -199,7 +225,7 @@ With default fields, the CSV columns are:
 | `pmid` | PubMed ID (null for unindexed preprints) |
 | `doi` | DOI (null for GEO records) |
 | `geo_accession` | GEO accession (null for non-GEO records) |
-| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `geo_linked_fulltext`, `geo_linked_abstract`, `geo_record`) |
+| `text_source` | Where the text came from (`abstract`, `pmc_fulltext`, `europepmc_fulltext`, `preprint_fulltext`, `unpaywall_pdf`, `s2_pdf`, `openalex_pdf`, `europepmc_oa_pdf`, `core_pdf`, `landing_page_pdf`, `custom_resolver_pdf`, `landing_page_html`, `geo_linked_fulltext`, `geo_linked_abstract`, `geo_record`) |
 | `citation_count` | Citation count from Semantic Scholar (null if not found) |
 | `methodology` | General method (e.g. GWAS, scRNA-seq, proteomics) |
 | `sample_type` | Tissue/sample type and origin |
@@ -316,10 +342,100 @@ result = screen_paper(client, paper, "Is this about schizophrenia genomics?", pa
 ## Custom full-text fetchers
 
 The built-in chain (PMC → Europe PMC → preprint → Unpaywall → Semantic
-Scholar → abstract) leaves coverage gaps for closed-access or
-recently-published work. You can plug in additional sources of full text
+Scholar → OpenAlex → Europe PMC OA PDF → CORE → landing-page PDF scrape →
+custom resolvers → landing-page HTML → abstract) leaves coverage gaps for
+closed-access or recently-published work. You can plug in additional sources of full text
 — a Zotero library, a flat directory of PDFs, an institutional
 full-text database — without forking biolit.
+
+### Landing-page scrape and custom resolvers (built-in, opt-in via env vars)
+
+Two built-in chain steps mirror Zotero's "Find Full Text" file
+resolvers and are configured the same way as Unpaywall / CORE — through
+environment variables, no code changes.
+
+**Landing-page scrape (step 9).** Always on, key-less. Resolves the DOI
+to the publisher's article page and reads the PDF link the page itself
+advertises — `<meta name="citation_pdf_url">` first (the Highwire /
+Google-Scholar standard most publishers embed), then `<link
+rel="alternate" type="application/pdf">`, Open Graph / Twitter-card PDF
+pointers, and obvious `*.pdf` anchors. A `<meta http-equiv="refresh">`
+redirect is followed once; every candidate is verified to start with the
+`%PDF` magic. This follows the publisher's *own advertised* OA link — not
+a paywall bypass — and catches OA PDFs the aggregator APIs mislabel or
+never index. bioRxiv / medRxiv are skipped (their servers block agents;
+the preprint step covers them). Source label: `landing_page_pdf`.
+
+```bash
+# Optional: override the browser User-Agent used for the landing-page
+# request (some publishers serve a stub or 403 to non-browser agents).
+export BIOLIT_LANDING_USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+```
+
+**Landing-page HTML full text (step 11).** Always on, key-less. The HTML
+counterpart of step 9. When no downloadable PDF was found anywhere, this
+follows the DOI to the article page, reads the publisher's
+`<meta name="citation_fulltext_html_url">` "a full HTML version exists"
+signal (set by PLOS / eLife / BMC / Frontiers and many society journals),
+and extracts the **article body text** — dropping nav / scripts / styles /
+chrome and preferring an `<article>` / `<main>` container. This recovers
+Methods text for OA papers that have no PDF at all. Bot-challenge pages
+(Cloudflare "Just a moment") and JavaScript-rendered shells are rejected
+rather than returned as "text". bioRxiv / medRxiv are skipped (the preprint
+step covers them). Source label: `landing_page_html`. It shares the
+`BIOLIT_LANDING_USER_AGENT` override above.
+
+When the whole chain misses, the abstract fallback classifies *why* full
+text was not reached (`bot_blocked` / `js_shell` / `abstract`) and records
+it as `paper_status` in the per-record artifacts, so a downstream caller
+can distinguish "blocked by a bot challenge" from "publisher serves only a
+JS shell" from "genuinely abstract-only".
+
+```bash
+# Optional: visible-character floor below which a fetched landing page is
+# treated as a JS-rendered shell (no server-rendered article body) rather
+# than full text. Default 2000.
+export BIOLIT_JS_SHELL_CHAR_THRESHOLD=2000
+```
+
+**Custom resolvers (step 10).** Opt-in. This is the seam for *your own
+authorized* access — typically your institution's OpenURL endpoint or a
+library EZproxy URL pattern. Set `BIOLIT_CUSTOM_RESOLVERS` to a JSON
+array of resolver entries. Each entry needs a `url_template` with
+`{doi}` / `{url}` placeholders; the URL is fetched with your configured
+headers and returned if it is a real PDF. When the resolved URL is an
+OpenURL / proxy *landing page* rather than a direct PDF, set
+`"scrape": true` to run its HTML through the landing-page scraper above.
+With nothing configured this step is a no-op. Source label:
+`custom_resolver_pdf`.
+
+```bash
+export BIOLIT_CUSTOM_RESOLVERS='[
+  {
+    "url_template": "https://proxy.lib.example.edu/login?url=https://doi.org/{doi}",
+    "headers": {"Cookie": "ezproxy=YOUR_SESSION"},
+    "scrape": true
+  },
+  {
+    "url_template": "https://resolver.example.edu/openurl?id=doi:{doi_encoded}&svc=fulltext"
+  }
+]'
+```
+
+Resolver-entry schema (only `url_template` is required):
+
+| Key | Meaning |
+|---|---|
+| `url_template` | URL with placeholders `{doi}`, `{doi_encoded}` (URL-quoted), `{url}`, `{url_encoded}`. An entry is skipped if its template needs a value that is unavailable. |
+| `user_agent` | Optional per-entry User-Agent override. |
+| `headers` | Optional dict of extra request headers (e.g. a proxy session `Cookie`). |
+| `scrape` | Optional bool — when true and the resolved URL returns HTML, scrape it for a PDF link via the landing-page scraper. |
+
+> biolit never hardcodes, requests, or stores credentials. Custom
+> resolvers follow *your* configured URL patterns using *your own
+> authorized* access (proxy login, session cookies, etc.). You are
+> responsible for ensuring your use complies with your institution's and
+> the publisher's terms of service.
 
 ### Reference fetchers (opt-in via env vars)
 
