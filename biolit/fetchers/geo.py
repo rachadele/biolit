@@ -79,6 +79,20 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
     pmids = _all_text(series, "Pubmed-ID")
     sample_count = len(series.findall(f"{ns}Sample-Ref"))
 
+    # Series status dates. The <Status> block (Submission/Release/Last-Update
+    # dates, YYYY-MM-DD) hangs off the SERIES element — read it from the series
+    # child specifically, NOT root.find, because Platform and every Sample carry
+    # their own <Status> too (the platform's release date is often years earlier).
+    # ``release_date`` is the GEO public-release date; downstream consumers
+    # (pub_finder / eval enrichment) previously had to re-fetch the brief XML for
+    # just this field because it was absent from the record.
+    submission_date = release_date = last_update_date = None
+    status = series.find(f"{ns}Status")
+    if status is not None:
+        submission_date = (status.findtext(f"{ns}Submission-Date") or "").strip() or None
+        release_date = (status.findtext(f"{ns}Release-Date") or "").strip() or None
+        last_update_date = (status.findtext(f"{ns}Last-Update-Date") or "").strip() or None
+
     # SuperSeries / SubSeries membership. MINiML carries these as
     # <Relation type="SuperSeries of" target="GSE..."/> (this record is the
     # umbrella; targets are its child subseries) and
@@ -201,6 +215,11 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
         "overall_design": overall_design,
         "experiment_type": experiment_type,
         "summary": summary,
+        # Series status dates (YYYY-MM-DD, or None). release_date = GEO public
+        # release; useful for paper-vs-release recency checks in pub_finder.
+        "submission_date": submission_date,
+        "release_date": release_date,
+        "last_update_date": last_update_date,
         "url": f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={accession}",
         "pmids": pmids,
         "platforms": platforms,
@@ -331,6 +350,9 @@ def format_geo_metadata(record: dict) -> str:
 
     if record.get("sample_count"):
         lines.append(f"Sample count: {record['sample_count']}")
+
+    if record.get("release_date"):
+        lines.append(f"Released: {record['release_date']}")
 
     pmids = record.get("pmids", [])
     if pmids:
