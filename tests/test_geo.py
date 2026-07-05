@@ -45,6 +45,76 @@ MINIML_MISSING_FIELDS = b"""<?xml version="1.0" encoding="UTF-8"?>
 </MINiML>
 """
 
+# A SubSeries with its own Status dates and a SuperSeries relation. The Platform
+# carries an EARLIER Status (2010) than the Series (2018) — the parser must read
+# the SERIES-level release date, not the platform's.
+MINIML_STATUS_AND_RELATIONS = b"""<?xml version="1.0" encoding="UTF-8"?>
+<MINiML xmlns="http://www.ncbi.nlm.nih.gov/geo/info/MINiML">
+  <Platform iid="GPL10558">
+    <Status database="GEO">
+      <Submission-Date>2010-06-17</Submission-Date>
+      <Release-Date>2010-06-17</Release-Date>
+      <Last-Update-Date>2020-03-04</Last-Update-Date>
+    </Status>
+    <Accession database="GEO">GPL10558</Accession>
+  </Platform>
+  <Series iid="GSE102764">
+    <Status database="GEO">
+      <Submission-Date>2017-08-17</Submission-Date>
+      <Release-Date>2018-02-01</Release-Date>
+      <Last-Update-Date>2021-11-18</Last-Update-Date>
+    </Status>
+    <Title>SubSeries with relations</Title>
+    <Type>Expression profiling by array</Type>
+    <Pubmed-ID>34765544</Pubmed-ID>
+    <Relation type="SubSeries of" target="GSE102765"/>
+    <Relation type="BioProject" target="https://www.ncbi.nlm.nih.gov/bioproject/PRJNA398637"/>
+  </Series>
+</MINiML>
+"""
+
+MINIML_SUPERSERIES = b"""<?xml version="1.0" encoding="UTF-8"?>
+<MINiML xmlns="http://www.ncbi.nlm.nih.gov/geo/info/MINiML">
+  <Series iid="GSE102765">
+    <Title>SuperSeries</Title>
+    <Relation type="SuperSeries of" target="GSE102760"/>
+    <Relation type="SuperSeries of" target="GSE102764"/>
+  </Series>
+</MINiML>
+"""
+
+
+class TestStatusDatesAndRelations:
+    def test_series_status_dates_not_platform(self):
+        r = _parse_miniml("GSE102764", MINIML_STATUS_AND_RELATIONS)
+        assert r["release_date"] == "2018-02-01"       # series, not platform 2010
+        assert r["submission_date"] == "2017-08-17"
+        assert r["last_update_date"] == "2021-11-18"
+
+    def test_release_date_in_formatted_metadata(self):
+        r = _parse_miniml("GSE102764", MINIML_STATUS_AND_RELATIONS)
+        assert "Released: 2018-02-01" in format_geo_metadata(r)
+
+    def test_subseries_relation(self):
+        r = _parse_miniml("GSE102764", MINIML_STATUS_AND_RELATIONS)
+        assert r["superseries"] == "GSE102765"
+        assert r["subseries"] == []
+        assert r["related_series"] == ["GSE102765"]     # BioProject relation ignored
+
+    def test_superseries_relation(self):
+        r = _parse_miniml("GSE102765", MINIML_SUPERSERIES)
+        assert r["superseries"] is None
+        assert r["subseries"] == ["GSE102760", "GSE102764"]
+        assert r["related_series"] == ["GSE102760", "GSE102764"]
+
+    def test_missing_status_and_relations_graceful(self):
+        r = _parse_miniml("GSE00001", MINIML_MISSING_FIELDS)
+        assert r["release_date"] is None
+        assert r["submission_date"] is None
+        assert r["superseries"] is None
+        assert r["subseries"] == []
+        assert r["related_series"] == []
+
 
 class TestParseMiniml:
     def test_parses_complete_record(self):
