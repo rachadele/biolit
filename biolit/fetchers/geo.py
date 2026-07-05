@@ -76,9 +76,10 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
     pmids = _all_text(series, "Pubmed-ID")
     sample_count = len(series.findall(f"{ns}Sample-Ref"))
 
-    # Build a name index from top-level Contributor elements, then resolve
-    # the iid references listed inside the Series element.
-    contributor_index: dict[str, str] = {}
+    # Build person + organization indexes from top-level Contributor elements,
+    # then resolve the iid references listed inside the Series element.
+    person_index: dict[str, str] = {}
+    org_names: list[str] = []
     for contrib in root.findall(f"{ns}Contributor"):
         iid = contrib.get("iid", "")
         person = contrib.find(f"{ns}Person")
@@ -86,19 +87,30 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
             first = (person.findtext(f"{ns}First") or "").strip()
             last = (person.findtext(f"{ns}Last") or "").strip()
             name = f"{last} {first}".strip() if last else first
-        else:
-            # Fallback: Organisation name
-            name = (contrib.findtext(f"{ns}Organization") or "").strip()
-        if iid and name:
-            contributor_index[iid] = name
+            if iid and name:
+                person_index[iid] = name
+        org = (contrib.findtext(f"{ns}Organization") or "").strip()
+        if org and org not in org_names:
+            org_names.append(org)
 
     author_parts = []
     for ref in series.findall(f"{ns}Contributor"):
-        iid = ref.get("iid", "")
-        name = contributor_index.get(iid)
+        name = person_index.get(ref.get("iid", ""))
         if name:
             author_parts.append(name)
+    # Fallback: some records leave the Series Contributor refs unresolvable
+    # (unlinked iids / <Contributor-Ref> form), which silently left ``authors``
+    # None — breaking the pub-finder's author-keyed strategies. Use all parsed
+    # Person contributors in document order instead.
+    if not author_parts:
+        author_parts = list(person_index.values())
     authors = ", ".join(author_parts) if author_parts else None
+
+    # Submitting institution(s): contributor organizations, minus the NCBI
+    # boilerplate GEO always appends. First one is the primary submitting lab.
+    _ncbi_boiler = {"ncbi nlm nih", "ncbi", "nlm nih", "nih"}
+    institutions = [o for o in org_names if o.strip().lower() not in _ncbi_boiler]
+    institution = institutions[0] if institutions else None
 
     # Parse Platform elements (only present with targ=all)
     platforms = []
@@ -153,6 +165,11 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
         "abstract": abstract,
         "mesh_terms": ([experiment_type] if experiment_type else []) + organisms,
         "authors": authors,
+        "institution": institution,
+        "institutions": institutions,
+        "overall_design": overall_design,
+        "experiment_type": experiment_type,
+        "summary": summary,
         "url": f"https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc={accession}",
         "pmids": pmids,
         "platforms": platforms,

@@ -61,6 +61,23 @@ def fetch_pubmed_metadata(pmid: str) -> dict | None:
                 author_parts.append(name)
     authors = ", ".join(author_parts) if author_parts else None
 
+    # Journal + publication year (curator context: venue + when it appeared).
+    journal = (article.findtext(".//Journal/Title")
+               or article.findtext(".//Journal/ISOAbbreviation") or "").strip() or None
+    year = (article.findtext(".//JournalIssue/PubDate/Year")
+            or article.findtext(".//PubDate/Year")
+            or (article.findtext(".//PubDate/MedlineDate") or "")[:4] or None)
+
+    # Author affiliations — the submitting lab's institution is a strong signal
+    # for confirming a dataset↔paper match. Dedup in document order; expose the
+    # full list plus a primary institution (first affiliation).
+    affiliations: list[str] = []
+    for aff in article.findall(".//AffiliationInfo/Affiliation"):
+        t = (aff.text or "").strip()
+        if t and t not in affiliations:
+            affiliations.append(t)
+    institution = affiliations[0] if affiliations else None
+
     time.sleep(_RATE_DELAY)
     return {
         "pmid": pmid,
@@ -69,6 +86,10 @@ def fetch_pubmed_metadata(pmid: str) -> dict | None:
         "abstract": abstract,
         "mesh_terms": mesh_terms,
         "authors": authors,
+        "journal": journal,
+        "year": year,
+        "affiliations": affiliations,
+        "institution": institution,
         "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
         "fulltext_xml": None,
         "fulltext_pdf": None,
