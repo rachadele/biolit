@@ -1,8 +1,11 @@
 """Fetcher for NCBI GEO series records (GSE accessions) via the MINiML XML API."""
+import re
 import time
 import xml.etree.ElementTree as ET
 
 import requests
+
+_GSE_RE = re.compile(r"GSE\d+", re.IGNORECASE)
 
 GEO_MINIML_URL = "https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi"
 _RATE_DELAY = 0.4
@@ -75,6 +78,34 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
     experiment_type = _text(series, "Type")
     pmids = _all_text(series, "Pubmed-ID")
     sample_count = len(series.findall(f"{ns}Sample-Ref"))
+
+    # SuperSeries / SubSeries membership. MINiML carries these as
+    # <Relation type="SuperSeries of" target="GSE..."/> (this record is the
+    # umbrella; targets are its child subseries) and
+    # <Relation type="SubSeries of" target="GSE..."/> (this record is a child;
+    # the target is its parent superseries). GEO also emits BioProject/Reanalysis
+    # Relation elements — filter to the two series-membership types and pull the
+    # GSE out of the target (bare accession for series relations, but regex-guard
+    # in case a URL form appears). This is the ONLY place the relationship enters
+    # the pipeline: pub_finder maps a paper citing the superseries onto the
+    # subseries being curated (and vice-versa) — see gemma-curation-agents
+    # pub_finder/finder.py.
+    superseries: str | None = None      # parent (this record is a SubSeries of it)
+    subseries: list[str] = []           # children (this record is their SuperSeries)
+    for rel in series.findall(f"{ns}Relation"):
+        rtype = (rel.get("type") or "").strip().lower()
+        m = _GSE_RE.search(rel.get("target") or "")
+        if not m:
+            continue
+        target = m.group(0).upper()
+        if target == (accession or "").upper():
+            continue  # never relate a series to itself
+        if rtype == "subseries of":
+            superseries = target
+        elif rtype == "superseries of":
+            if target not in subseries:
+                subseries.append(target)
+    related_series = ([superseries] if superseries else []) + subseries
 
     # Build person + organization indexes from top-level Contributor elements,
     # then resolve the iid references listed inside the Series element.
@@ -176,6 +207,14 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
         "organisms": organisms,
         "sample_count": sample_count,
         "samples": samples,
+        # Series-membership relations (empty when standalone). ``superseries``
+        # is the parent GSE (set iff this record is a subseries); ``subseries``
+        # lists child GSEs (set iff this record is a superseries);
+        # ``related_series`` is their union — the accession set pub_finder
+        # expands its citation search / in-text check over.
+        "superseries": superseries,
+        "subseries": subseries,
+        "related_series": related_series,
         "text_source": "geo_record",
     }
 
