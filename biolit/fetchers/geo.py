@@ -79,6 +79,24 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
     pmids = _all_text(series, "Pubmed-ID")
     sample_count = len(series.findall(f"{ns}Sample-Ref"))
 
+    # Series <Status> dates. The public-release date is a load-bearing
+    # pub_finder signal — a paper for a study usually appears at/after the
+    # data release, so a paper dated years *before* release is suspect.
+    status = series.find(f"{ns}Status")
+    release_date = submission_date = last_update_date = None
+    if status is not None:
+        release_date = (status.findtext(f"{ns}Release-Date") or "").strip() or None
+        submission_date = (status.findtext(f"{ns}Submission-Date") or "").strip() or None
+        last_update_date = (status.findtext(f"{ns}Last-Update-Date") or "").strip() or None
+
+    # Series-level supplementary-file links (typed URLs).
+    supplementary_files = []
+    for sd in series.findall(f"{ns}Supplementary-Data"):
+        u = (sd.text or "").strip()
+        if u:
+            supplementary_files.append(
+                {"type": (sd.get("type") or "").strip(), "url": u})
+
     # SuperSeries / SubSeries membership. MINiML carries these as
     # <Relation type="SuperSeries of" target="GSE..."/> (this record is the
     # umbrella; targets are its child subseries) and
@@ -215,6 +233,10 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
         "superseries": superseries,
         "subseries": subseries,
         "related_series": related_series,
+        "release_date": release_date,
+        "submission_date": submission_date,
+        "last_update_date": last_update_date,
+        "supplementary_files": supplementary_files,
         "text_source": "geo_record",
     }
 
@@ -331,6 +353,12 @@ def format_geo_metadata(record: dict) -> str:
 
     if record.get("sample_count"):
         lines.append(f"Sample count: {record['sample_count']}")
+
+    if record.get("release_date"):
+        rel = f"Public release date: {record['release_date']}"
+        if record.get("submission_date"):
+            rel += f" (submitted {record['submission_date']})"
+        lines.append(rel)
 
     pmids = record.get("pmids", [])
     if pmids:
