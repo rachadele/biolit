@@ -93,9 +93,16 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
             contributor_index[iid] = name
 
     author_parts = []
-    for ref in series.findall(f"{ns}Contributor"):
-        iid = ref.get("iid", "")
-        name = contributor_index.get(iid)
+    # Series references its contributors as <Contributor-Ref ref="contribN"/>
+    # (older/variant MINiML may inline <Contributor iid="…"/> — handle both,
+    # by ``ref`` then ``iid``). The prior code looked for <Contributor> with
+    # ``iid`` inside <Series>, which never matched, so ``authors`` was always
+    # None — fixed here.
+    refs = (series.findall(f"{ns}Contributor-Ref")
+            or series.findall(f"{ns}Contributor"))
+    for ref in refs:
+        key = ref.get("ref") or ref.get("iid") or ""
+        name = contributor_index.get(key)
         if name:
             author_parts.append(name)
     authors = ", ".join(author_parts) if author_parts else None
@@ -145,6 +152,43 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
     # operates blind to sample-name patterns the curator relies on.
     samples = _parse_samples(root, ns)
 
+    # --- Series-level metadata beyond the paper projection ----------------
+    # The MINiML we already fetched carries dates, cross-references, and
+    # supplementary-file links. Extract them here so downstream consumers
+    # (e.g. gemma-curation-agents preboarding, the pub-finder date check)
+    # don't re-fetch the same XML just to read one more element. Add fields
+    # here rather than in a second request the next time one is needed.
+    status = series.find(f"{ns}Status")
+    release_date = submission_date = last_update_date = None
+    if status is not None:
+        release_date = (status.findtext(f"{ns}Release-Date") or "").strip() or None
+        submission_date = (status.findtext(f"{ns}Submission-Date") or "").strip() or None
+        last_update_date = (status.findtext(f"{ns}Last-Update-Date") or "").strip() or None
+
+    supplementary_files = []
+    for sd in series.findall(f"{ns}Supplementary-Data"):
+        url = (sd.text or "").strip()
+        if url:
+            supplementary_files.append(
+                {"type": (sd.get("type") or "").strip(), "url": url})
+
+    # Cross-references — BioProject / SRA / dbGaP / re-analysis links.
+    relations = []
+    for rel in series.findall(f"{ns}Relation"):
+        target = (rel.get("target") or "").strip()
+        if target:
+            relations.append(
+                {"type": (rel.get("type") or "").strip(), "target": target})
+
+    # Submitting organisation(s): top-level <Contributor> elements that
+    # carry an <Organization> rather than a <Person>.
+    organizations = []
+    for contrib in root.findall(f"{ns}Contributor"):
+        if contrib.find(f"{ns}Person") is None:
+            org = (contrib.findtext(f"{ns}Organization") or "").strip()
+            if org:
+                organizations.append(org)
+
     return {
         "pmid": pmids[0] if pmids else None,
         "accession": accession,
@@ -160,6 +204,17 @@ def _parse_miniml(accession: str, xml_bytes: bytes) -> dict | None:
         "sample_count": sample_count,
         "samples": samples,
         "text_source": "geo_record",
+        # Series-level metadata (added 2026-07-04 — capture the whole record,
+        # not just the paper-shaped projection):
+        "release_date": release_date,
+        "submission_date": submission_date,
+        "last_update_date": last_update_date,
+        "summary": summary,
+        "overall_design": overall_design,
+        "experiment_type": experiment_type,
+        "supplementary_files": supplementary_files,
+        "relations": relations,
+        "organizations": organizations,
     }
 
 
@@ -275,6 +330,12 @@ def format_geo_metadata(record: dict) -> str:
 
     if record.get("sample_count"):
         lines.append(f"Sample count: {record['sample_count']}")
+
+    if record.get("release_date"):
+        rel = f"Public release date: {record['release_date']}"
+        if record.get("submission_date"):
+            rel += f" (submitted {record['submission_date']})"
+        lines.append(rel)
 
     pmids = record.get("pmids", [])
     if pmids:
