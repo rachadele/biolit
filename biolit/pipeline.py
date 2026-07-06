@@ -1044,6 +1044,63 @@ def _resolve_one(
     )
 
 
+# ---------------------------------------------------------------------------
+# Full-text cache — the fetch chain is a network-dependent fallback cascade
+# (PMC -> EuropePMC -> Unpaywall -> S2 PDF -> ...), so a transient failure at a
+# high-priority source silently downgrades the result to a different source (or
+# abstract-only) and the SAME paper resolves to DIFFERENT text run-to-run. Cache
+# the FULL-TEXT outcome per id so a paper resolves once: deterministic, faster,
+# and kinder to NCBI/publishers. Only full-text results are cached — an
+# abstract-only / failed fetch is NOT cached, so a later run can retry for full
+# text. Location: $BIOLIT_PAPER_CACHE_DIR or ~/Data/biolit_paper_cache.
+# ---------------------------------------------------------------------------
+
+def _paper_cache_key(accession, pmid, doi, sections_wanted=None, max_tokens=None) -> str:
+    idpart = ((pmid or "").strip() or (doi or "").strip().lower()
+              or (accession or "").strip().upper())
+    if not idpart:
+        return ""
+    # The cached TEXT is section-selected, so the key must include the selection
+    # params — a different (sections_wanted, max_tokens) is a different result.
+    return f"{idpart}|{','.join(sections_wanted or [])}|{max_tokens}"
+
+
+def _paper_cache_path(key: str):
+    import hashlib
+    from pathlib import Path
+    root = os.environ.get("BIOLIT_PAPER_CACHE_DIR") or str(
+        Path.home() / "Data" / "gemma-curation-agents-data" / "biolit_paper_cache")
+    return Path(root) / f"{hashlib.sha1(key.encode()).hexdigest()[:20]}.json"
+
+
+def _load_paper_cache(key: str):
+    if not key or os.environ.get("BIOLIT_PAPER_CACHE_DISABLE"):
+        return None
+    p = _paper_cache_path(key)
+    if not p.is_file():
+        return None
+    try:
+        d = json.loads(p.read_text())
+        return PaperResult(text=d["text"], source=d["source"], is_fulltext=d["is_fulltext"],
+                           pmid=d.get("pmid"), doi=d.get("doi"), title=d.get("title"))
+    except Exception:  # noqa: BLE001 — a corrupt cache entry is not fatal
+        return None
+
+
+def _cache_and_return(key: str, r: "PaperResult") -> "PaperResult":
+    if key and r.is_fulltext and not os.environ.get("BIOLIT_PAPER_CACHE_DISABLE"):
+        import time
+        try:
+            p = _paper_cache_path(key)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps({
+                "key": key, "text": r.text, "source": r.source, "is_fulltext": r.is_fulltext,
+                "pmid": r.pmid, "doi": r.doi, "title": r.title, "cached_at": int(time.time())}))
+        except Exception:  # noqa: BLE001
+            pass
+    return r
+
+
 def fetch_paper(
     accession: str | None = None,
     pmid: str | None = None,
@@ -1070,13 +1127,20 @@ def fetch_paper(
     Returns the best :class:`PaperResult` across the attempted ids: full text
     if any path found it, else the longest non-empty text, else the primary.
     """
+    # Full-text cache — return a previously-resolved full text so the same paper
+    # doesn't re-run the flaky fetch cascade (and re-fetch different text).
+    _key = _paper_cache_key(accession, pmid, doi, sections_wanted, max_tokens)
+    _cached = _load_paper_cache(_key)
+    if _cached is not None:
+        return _cached
+
     primary = _resolve_one(
         (accession or pmid or "").strip() or None,
         fallback_pmid=pmid, unpaywall_email=unpaywall_email,
         sections_wanted=sections_wanted, max_tokens=max_tokens,
     )
     if primary.is_fulltext:
-        return primary
+        return _cache_and_return(_key, primary)
     best = primary
     if doi and doi.strip():
         secondary = _resolve_one(
@@ -1084,7 +1148,7 @@ def fetch_paper(
             sections_wanted=sections_wanted, max_tokens=max_tokens,
         )
         if secondary.is_fulltext:
-            return secondary
+            return _cache_and_return(_key, secondary)
         if secondary.text and not best.text:
             best = secondary
     if pmid and pmid.strip() and (accession or doi):
@@ -1094,7 +1158,9 @@ def fetch_paper(
         )
         if tertiary.is_fulltext or (tertiary.text and not best.text):
             best = tertiary
-    return best
+    # ``best`` is not full text (abstract-only / failed) — do NOT cache it, so a
+    # later run can retry the cascade and get full text.
+    return _cache_and_return(_key, best)
 
 
 def run(
