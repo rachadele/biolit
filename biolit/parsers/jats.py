@@ -156,12 +156,42 @@ def parse_jats_sections(xml_bytes: bytes) -> dict[str, str]:
     except Exception:
         pass
 
-    # 2. Walk <sec> elements and key them by their <title>
+    # 2. Walk TOP-LEVEL <sec> elements and key them by their <title>.
+    #
+    # Only sections that are NOT nested inside another <sec>. A parent
+    # section's ``_text_of`` already includes all of its descendants'
+    # text, so also emitting each child <sec> (e.g. Methods > "Mice",
+    # "Flow cytometry") as its own top-level key DUPLICATES the Methods
+    # content. Under downstream truncation that duplication is harmful:
+    # the same Methods text occupies the excerpt twice and pushes later
+    # sections past the cap (2026-07-31: a 35 KB immunology paper's
+    # Methods appeared as both ``methods`` and a dozen subsection keys;
+    # the "Mice" block with the animal age survived only because it was
+    # also inside ``methods``). Emitting top-level sections only keeps
+    # ``methods`` intact with its full nested content while dropping the
+    # redundant per-subsection copies. Genuinely flat layouts (each
+    # Methods subsection a top-level <sec> with no parent wrapper) are
+    # unaffected — those secs have no <sec> ancestor and are all kept.
     try:
         try:
-            sec_elements = root.xpath("//*[local-name()='sec']")
+            sec_elements = root.xpath(
+                "//*[local-name()='sec']"
+                "[not(ancestor::*[local-name()='sec'])]"
+            )
         except AttributeError:
-            sec_elements = root.findall(".//{*}sec")
+            all_secs = root.findall(".//{*}sec")
+            _parent = {child: parent for parent in root.iter() for child in parent}
+
+            def _has_sec_ancestor(el) -> bool:
+                p = _parent.get(el)
+                while p is not None:
+                    tag = getattr(p, "tag", "")
+                    if isinstance(tag, str) and (tag == "sec" or tag.endswith("}sec")):
+                        return True
+                    p = _parent.get(p)
+                return False
+
+            sec_elements = [s for s in all_secs if not _has_sec_ancestor(s)]
     except Exception:
         sec_elements = []
 
