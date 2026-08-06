@@ -83,6 +83,50 @@ class TestParseJatsSections:
         assert "Foxp3creYFPMice" in methods
         assert "HDAC6KO" in methods
 
+    def test_nested_subsection_not_emitted_as_separate_key(self):
+        """A nested subsection's text is already inside its parent's
+        section, so it must NOT also be emitted as its own top-level key
+        — that duplicated Methods content and wasted the excerpt budget
+        under truncation (2026-07-31). ``methods`` keeps the child text;
+        there is no separate ``mice`` key."""
+        xml = (
+            b"<article><body>"
+            b"<sec><title>Methods</title>"
+            b"<sec><title>Mice</title>"
+            b"<p>Mice were used between the ages of 6 to 8 weeks.</p>"
+            b"</sec>"
+            b"<sec><title>Flow cytometry</title>"
+            b"<p>Cells were stained with anti-CD3.</p>"
+            b"</sec></sec>"
+            b"<sec><title>Results</title><p>We found 47 genes.</p></sec>"
+            b"</body></article>"
+        )
+        secs = parse_jats_sections(xml)
+        # Parent keeps all nested content.
+        assert "6 to 8 weeks" in secs["methods"]
+        assert "anti-CD3" in secs["methods"]
+        # Nested children are NOT separate keys (no duplication).
+        assert "mice" not in secs
+        assert "flow cytometry" not in secs
+        # Sibling top-level section is unaffected.
+        assert "47" in secs["results"]
+
+    def test_flat_methods_subsections_all_kept(self):
+        """When Methods subsections are top-level <sec>s (no parent
+        wrapper), every one is kept — the top-level-only rule only drops
+        genuinely-nested duplicates."""
+        xml = (
+            b"<article><body>"
+            b'<sec sec-type="methods"><title>Mice</title>'
+            b"<p>C57BL/6 at 8 weeks.</p></sec>"
+            b'<sec sec-type="methods"><title>Sequencing</title>'
+            b"<p>Illumina HiSeq.</p></sec>"
+            b"</body></article>"
+        )
+        secs = parse_jats_sections(xml)
+        assert "8 weeks" in secs.get("mice", "")
+        assert "Illumina" in secs.get("sequencing", "")
+
 
 class TestSelectSections:
     def test_returns_all_sections_when_wanted_is_none(self):
