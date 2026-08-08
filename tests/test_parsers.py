@@ -83,6 +83,22 @@ class TestParseJatsSections:
         assert "Foxp3creYFPMice" in methods
         assert "HDAC6KO" in methods
 
+    def test_extracts_footnote_data_availability_statement(self):
+        """PMID 29631039: GEO accession statements are often published as
+        a <fn> in <back>/<fn-group>, not a body <sec>, and were previously
+        silently dropped."""
+        xml = (
+            b"<article><back><fn-group><fn><p>Data are available under "
+            b'GEO accession numbers <ext-link ext-link-type="pmc:entrez-geo" '
+            b'xlink:href="GSE70823">GSE70823</ext-link> and '
+            b'<ext-link ext-link-type="pmc:entrez-geo" '
+            b'xlink:href="GSE102352">GSE102352</ext-link>.</p></fn>'
+            b"</fn-group></back></article>"
+        )
+        secs = parse_jats_sections(xml)
+        assert "GSE70823" in secs["footnotes"]
+        assert "GSE102352" in secs["footnotes"]
+
     def test_nested_subsection_not_emitted_as_separate_key(self):
         """A nested subsection's text is already inside its parent's
         section, so it must NOT also be emitted as its own top-level key
