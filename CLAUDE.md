@@ -71,7 +71,7 @@ mcp dev biolit/mcp_server.py              # test MCP server interactively
 - `biolit/fetchers/pubmed.py`, `geo.py`, `preprints.py` — metadata parsers for each source
 - `biolit/fetchers/_hooks.py` — fetcher registry (`register_fetcher`, priority-ordered, runs before the built-in chain)
 - `biolit/fetchers/zotero.py`, `local_pdf.py`, `bibtex.py` — reference custom fetchers, auto-register from env vars (`ZOTERO_API_KEY`, `BIOLIT_LOCAL_PDF_DIR`, `BIOLIT_BIBTEX`)
-- `biolit/parsers/jats.py` — JATS text extraction: `\n` at block boundaries (`sec`, `p`, `table`/`tr`/`td`, `fn`, …), none at inline boundaries (`sup`, `sub`, `xref`, …) so markup-split compound terms stay glued. `parse_jats_sections` keys top-level `<sec>` only (nested subsections dropped as duplicates) plus a `footnotes` key from `<fn>`
+- `biolit/parsers/jats.py` — JATS text extraction: `\n` at block boundaries (`sec`, `p`, `table`/`tr`/`td`, `fn`, `notes`, …), none at inline boundaries (`sup`, `sub`, `xref`, …) so markup-split compound terms stay glued. `parse_jats_sections` keys top-level `<sec>` only (nested subsections dropped as duplicates) plus a `footnotes` key from `<fn>` and a `notes` key from `<notes>` (data-availability/funding/ethics statements published outside a body `<sec>`)
 - `tests/` — pytest suite
 
 ## Testing Conventions

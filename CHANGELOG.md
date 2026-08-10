@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.36] — 2026-08-10
+
+### Fixed
+- **JATS: extract `<notes>` elements** — data-availability, funding, and ethics statements are sometimes published as a `<notes>` element (usually under `<back>`) rather than `<fn>` or a body `<sec>`, and were previously dropped from `parse_jats_sections`. Notes text is now collected into a new `notes` section key, same rationale as the existing `<fn>` extraction.
+
 ## [0.1.35] — 2026-08-10
 
 ### Fixed
