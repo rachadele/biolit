@@ -1,10 +1,18 @@
 """Shared pytest fixtures."""
+import os
 import pathlib
 
 import pytest
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
+
+# fetch_paper() caches full-text results to disk keyed by pmid/doi/accession
+# alone (not by mocked source), so distinct tests reusing the same id (e.g.
+# pmid "12345") would otherwise read back another test's cached full text
+# instead of exercising their own mocks. Disable the on-disk cache for the
+# whole suite — tests always mock the network, so there's nothing to cache.
+os.environ["BIOLIT_PAPER_CACHE_DISABLE"] = "1"
 
 # Clear any fetchers auto-registered from the developer's .env (BIOLIT_BIBTEX,
 # BIOLIT_LOCAL_PDF_DIR, ZOTERO_API_KEY, ...) so the test suite isn't

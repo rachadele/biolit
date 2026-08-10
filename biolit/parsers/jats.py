@@ -16,7 +16,7 @@ _JATS_BLOCK_TAGS = frozenset({
     "table-wrap", "caption", "fig", "boxed-text",
     "disp-formula", "disp-quote", "abstract", "body",
     "front", "back", "ref-list", "ref", "table", "tr",
-    "thead", "tbody", "th", "td",
+    "thead", "tbody", "th", "td", "fn",
 })
 
 
@@ -210,6 +210,22 @@ def parse_jats_sections(xml_bytes: bytes) -> dict[str, str]:
         text = _text_of(sec)
         if text and key not in sections:
             sections[key] = text
+
+    # 3. <fn> elements — data-availability/accession statements are often
+    # published as footnotes (e.g. in <back>/<fn-group>) rather than in a
+    # body <sec>, and were previously silently dropped. Footnotes are
+    # never nested inside each other, so no ancestor-filtering is needed.
+    try:
+        try:
+            fn_elements = root.xpath("//*[local-name()='fn']")
+        except AttributeError:
+            fn_elements = root.findall(".//{*}fn")
+    except Exception:
+        fn_elements = []
+
+    fn_text = "\n".join(t for fn in fn_elements if (t := _text_of(fn)))
+    if fn_text:
+        sections["footnotes"] = fn_text
 
     return sections
 
