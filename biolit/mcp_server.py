@@ -26,7 +26,10 @@ import os
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ModuleNotFoundError:  # mcp>=2.0 renamed FastMCP -> MCPServer, moved to mcp.server.mcpserver
+    from mcp.server.mcpserver import MCPServer as FastMCP
 
 from biolit.config import load_config
 

@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.35] — 2026-08-10
+
+### Fixed
+- **MCP server: compatible with `mcp` v2.0** — `mcp` 2.0.0 renamed `FastMCP` to `MCPServer` and moved it from `mcp.server.fastmcp` to `mcp.server.mcpserver`, breaking `biolit_mcp_server.py` on any fresh install (`ModuleNotFoundError: No module named 'mcp.server.fastmcp'`) since the `mcp[cli]` dependency is unpinned and pip resolved the new major version. `biolit/mcp_server.py` now tries the pre-2.0 import first and falls back to the new location/name, so the package works against both `mcp<2.0` and `mcp>=2.0`.
+
 ## [0.1.34] — 2026-08-10
 
 ### Added
