@@ -16,7 +16,7 @@ _JATS_BLOCK_TAGS = frozenset({
     "table-wrap", "caption", "fig", "boxed-text",
     "disp-formula", "disp-quote", "abstract", "body",
     "front", "back", "ref-list", "ref", "table", "tr",
-    "thead", "tbody", "th", "td", "fn",
+    "thead", "tbody", "th", "td", "fn", "notes",
 })
 
 
@@ -226,6 +226,21 @@ def parse_jats_sections(xml_bytes: bytes) -> dict[str, str]:
     fn_text = "\n".join(t for fn in fn_elements if (t := _text_of(fn)))
     if fn_text:
         sections["footnotes"] = fn_text
+
+    # 4. <notes> elements — same rationale as <fn>: data-availability,
+    # funding, and ethics statements are often published as <notes>
+    # (usually under <back>) rather than in a body <sec>.
+    try:
+        try:
+            notes_elements = root.xpath("//*[local-name()='notes']")
+        except AttributeError:
+            notes_elements = root.findall(".//{*}notes")
+    except Exception:
+        notes_elements = []
+
+    notes_text = "\n".join(t for n in notes_elements if (t := _text_of(n)))
+    if notes_text:
+        sections["notes"] = notes_text
 
     return sections
 
