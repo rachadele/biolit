@@ -346,6 +346,17 @@ def _pdf_to_sections_text(
     return None
 
 
+def _more_than_abstract(secs: dict) -> bool:
+    """True if a parsed JATS section dict has real full-text content.
+
+    PMC/Europe PMC sometimes store abstract-only stubs (e.g. bioRxiv/medRxiv
+    preprints indexed via NIH's Preprint Pilot) whose JATS has an <abstract>
+    but no body. ``parse_jats_sections`` faithfully returns ``{"abstract": ...}``
+    for these, which must NOT be mistaken for full-text success.
+    """
+    return bool(secs) and set(secs) != {"abstract"}
+
+
 def resolve_fulltext(
     paper: dict,
     unpaywall_email: str | None = None,
@@ -406,7 +417,7 @@ def resolve_fulltext(
         if xml_bytes:
             artifacts["pmc_xml"] = xml_bytes
             secs = parse_jats_sections(xml_bytes)
-            if secs:
+            if _more_than_abstract(secs):
                 return select_sections(secs, sections_wanted, max_tokens), "pmc_fulltext", artifacts
 
     # 2. Europe PMC MED/{pmid} — broader open-access coverage beyond NCBI PMC
@@ -414,7 +425,7 @@ def resolve_fulltext(
     if xml_bytes:
         artifacts["europepmc_xml"] = xml_bytes
         secs = parse_jats_sections(xml_bytes)
-        if secs:
+        if _more_than_abstract(secs):
             return select_sections(secs, sections_wanted, max_tokens), "europepmc_fulltext", artifacts
 
     # 3. Preprints

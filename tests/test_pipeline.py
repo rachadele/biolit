@@ -528,6 +528,30 @@ class TestScreenByDoi:
 
 
 # ---------------------------------------------------------------------------
+# resolve_fulltext — abstract-only PMC/Europe PMC stubs must fall through
+# ---------------------------------------------------------------------------
+
+class TestResolveFulltextAbstractOnlyStub:
+    """PMC stores abstract-only stubs for some Preprint-Pilot bioRxiv/medRxiv
+    records (no body sections at all). ``resolve_fulltext`` must not mistake
+    that for full-text success and should fall through to later steps."""
+
+    @patch("biolit.pipeline.fetch_preprint")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_pmc_fulltext")
+    def test_falls_through_to_preprint_when_pmc_is_abstract_only(
+        self, mock_pmc, mock_epmc, mock_preprint, sample_pubmed_metadata, sample_jats_xml
+    ):
+        # PMC "succeeds" but its JATS has only an <abstract>, no body sections.
+        mock_pmc.return_value = b"<article><abstract><p>Stub abstract only.</p></abstract></article>"
+        mock_epmc.return_value = None
+        mock_preprint.return_value = sample_jats_xml  # real full text
+        text, source, _ = resolve_fulltext(sample_pubmed_metadata)
+        assert source == "preprint_fulltext"
+        assert "Methods" in text or "genotyped" in text
+
+
+# ---------------------------------------------------------------------------
 # resolve_fulltext — Semantic Scholar step
 # ---------------------------------------------------------------------------
 
