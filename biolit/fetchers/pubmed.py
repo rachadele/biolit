@@ -33,9 +33,12 @@ def fetch_pubmed_metadata(pmid: str) -> dict | None:
     if article is None:
         return None
 
-    title = article.findtext(".//ArticleTitle", default="").strip()
+    title_elem = article.find(".//ArticleTitle")
+    title = "".join(title_elem.itertext()).strip() if title_elem is not None else ""
     abstract_parts = article.findall(".//AbstractText")
-    abstract = " ".join((t.text or "").strip() for t in abstract_parts if t.text)
+    abstract = " ".join(
+        stripped for t in abstract_parts if (stripped := "".join(t.itertext()).strip())
+    )
     mesh_terms = [
         m.findtext("DescriptorName", default="")
         for m in article.findall(".//MeshHeading")
