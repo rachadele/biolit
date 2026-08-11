@@ -195,3 +195,18 @@ class TestSelectSections:
         out = select_sections(secs)
         assert "=== INTRODUCTION ===" in out
 
+    def test_data_availability_survives_truncation(self):
+        secs = {
+            "results": "x" * 5000,
+            "data availability": "GSE210470",
+        }
+        out = select_sections(secs, max_tokens=25)  # 100 char budget
+        assert "GSE210470" in out
+
+    def test_normal_truncation_order_preserved_without_priority_sections(self):
+        secs = {"methods": "M" * 5000, "results": "R" * 5000}
+        out = select_sections(secs, max_tokens=25)
+        assert out.startswith("=== METHODS ===")
+        assert "RESULTS" not in out
+        assert "truncated" in out
+

@@ -30,10 +30,23 @@ def select_sections(
     else:
         chosen = sections
 
+    # Promote small back-matter sections (data availability / notes /
+    # footnotes / supplementary material) to the front so they survive
+    # truncation even when earlier narrative sections consume the budget.
+    priority_markers = ("data availability", "notes", "footnote", "supplementary material")
+    priority_items = []
+    rest_items = []
+    for key, text in chosen.items():
+        if any(marker in key.lower() for marker in priority_markers):
+            priority_items.append((key, text))
+        else:
+            rest_items.append((key, text))
+    ordered_items = priority_items + rest_items
+
     max_chars = max_tokens * 4
     parts = []
     total = 0
-    for key, text in chosen.items():
+    for key, text in ordered_items:
         header = f"=== {key.upper()} ===\n"
         chunk = header + text + "\n"
         if total + len(chunk) > max_chars:
