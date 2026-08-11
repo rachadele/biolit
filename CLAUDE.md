@@ -64,7 +64,8 @@ mcp dev biolit/mcp_server.py              # test MCP server interactively
 
 - `biolit/config.py` — `load_config(path)`; `fields` may be a comma string or `{field: description}` dict (dict skips the schema-build LLM call)
 - `biolit/cli.py` — CLI entry point; `.bib` input auto-detected via `read_dois_from_bib`
-- `biolit/pipeline.py` — main pipeline. `run(..., batch=False)` dispatches to `_run_sequential_loop` / `_run_batch_loop`, sharing `_fetch_and_resolve_all`, `_persist_record_artifacts`, prompt builders. Also: `fetch_record`, `screen_paper`, `resolve_fulltext`, `_resolve_geo_fulltext`, `extract_fields`, `format_record_markdown`
+- `biolit/pipeline.py` — main pipeline. `run(..., batch=False)` dispatches to `_run_sequential_loop` / `_run_batch_loop`, sharing `_fetch_and_resolve_all`, `_persist_record_artifacts`, prompt builders. Also: `fetch_record`, `screen_paper`, `resolve_fulltext`, `_resolve_geo_fulltext`, `extract_fields`, `format_record_markdown`. `resolve_fulltext` uses `_more_than_abstract()` to reject abstract-only PMC/Europe PMC stubs (Preprint-Pilot bioRxiv/medRxiv records) before falling through to later steps
+- `biolit/parsers/utils.py` — `select_sections(secs, sections_wanted, max_tokens)` truncates parsed JATS sections to a char budget; promotes small back-matter sections (data availability/notes/footnotes/supplementary material) to the front so they survive truncation ahead of narrative sections
 - `biolit/llm/base.py` — `BaseLLMClient.chat_batch()` default loops `chat()`; `resolve_api_key()` checks macOS keychain before env var
 - `biolit/llm/anthropic_client.py` / `openai_client.py` — native `chat_batch()` via Message Batches / Batches API
 - `biolit/mcp_server.py` — MCP server; LLM client lazily built on first LLM-touching call; provider/model from `--provider`/`--model` flags or env vars

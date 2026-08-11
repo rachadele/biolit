@@ -2,6 +2,12 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.37] — 2026-08-11
+
+### Fixed
+- **`resolve_fulltext`: stop treating abstract-only PMC/Europe PMC stubs as full text** — PMC stores abstract-only stubs for some Preprint-Pilot bioRxiv/medRxiv records; `parse_jats_sections` correctly returns `{"abstract": ...}` for these, but the old `if secs:` check treated any non-empty dict as full-text success, short-circuiting before Europe PMC/`fetch_preprint` could find the real full text. New `_more_than_abstract()` helper gates both the PMC and Europe PMC steps.
+- **`select_sections`: promote data availability/notes sections before truncation** — small back-matter sections (data availability, notes, footnotes, supplementary material) were getting silently dropped when earlier narrative sections exhausted the char budget, even though they're tiny and often contain GEO accession numbers. Chosen sections are now reordered so these go first; no change to `max_tokens`.
+
 ## [0.1.36] — 2026-08-10
 
 ### Fixed
