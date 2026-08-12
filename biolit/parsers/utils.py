@@ -33,7 +33,17 @@ def select_sections(
     # Promote small back-matter sections (data availability / notes /
     # footnotes / supplementary material) to the front so they survive
     # truncation even when earlier narrative sections consume the budget.
-    priority_markers = ("data availability", "notes", "footnote", "supplementary material")
+    # Some journals (e.g. Disease Models & Mechanisms) place Methods last,
+    # after Results/Discussion, so it also needs promoting: "method" matches
+    # both the "methods" and "materials and methods" JATS section keys
+    # without matching any other recognised section name.
+    priority_markers = (
+        "data availability",
+        "notes",
+        "footnote",
+        "supplementary material",
+        "method",
+    )
     priority_items = []
     rest_items = []
     for key, text in chosen.items():

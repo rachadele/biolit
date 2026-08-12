@@ -210,3 +210,18 @@ class TestSelectSections:
         assert "RESULTS" not in out
         assert "truncated" in out
 
+    def test_end_of_document_methods_survives_truncation(self):
+        # Reproduces the Disease Models & Mechanisms layout (PMID 23580197 /
+        # GSE34305): Introduction -> Results -> Discussion -> Materials and
+        # Methods, i.e. Methods last. Without promotion, the preceding
+        # narrative sections exhaust the char budget before Methods is ever
+        # reached.
+        secs = {
+            "introduction": "I" * 5000,
+            "results": "R" * 5000,
+            "discussion": "D" * 5000,
+            "materials and methods": "GSE34305 generated via RNA-seq",
+        }
+        out = select_sections(secs, max_tokens=25)  # 100 char budget
+        assert "GSE34305 generated via RNA-seq" in out
+
