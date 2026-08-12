@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.38] — 2026-08-11
+
+### Fixed
+- **PubMed: abstract/title extraction dropped text after nested inline tags** — `Element.text`/`findtext()` only return text before an element's first child, silently truncating titles and abstracts at nested inline tags like `<sub>`/`<sup>`/`<i>` (e.g. "Vitamin B" + `<sub>12</sub>` + " deficiency..." lost everything after the tag). `fetch_pubmed_metadata` now uses `itertext()` to capture all nested text content.
+
 ## [0.1.37] — 2026-08-11
 
 ### Fixed
