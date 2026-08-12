@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.39] — 2026-08-12
+
+### Fixed
+- **`select_sections`: promote Methods sections before truncation** — some journals (e.g. Disease Models & Mechanisms) structure papers as Introduction -> Results -> Discussion -> Materials and Methods, i.e. Methods last. When full text exceeds the char budget, Methods — exactly where an LLM needs to look to judge generated vs cited/reused data — got silently truncated away. Found via `pub_finder`'s experiment_confirmation gate on PMID 23580197 / GSE34305; a prevalence check across 45 ground-truth papers found ~13-18% of full-text papers affected. Extends the back-matter promotion mechanism from 0.1.37 with a "method" marker that matches both "methods" and "materials and methods" JATS section keys without over-matching other section names.
+
 ## [0.1.38] — 2026-08-11
 
 ### Fixed
