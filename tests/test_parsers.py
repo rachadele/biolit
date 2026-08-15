@@ -163,3 +163,42 @@ class TestSelectSections:
         out = select_sections(secs)
         assert "=== INTRODUCTION ===" in out
 
+
+    def test_structured_abstract_does_not_shadow_body_sections(self):
+        """A structured abstract's <sec> subsections must not claim the
+        ``methods`` / ``results`` keys ahead of the body's real sections.
+
+        Abstract subsections are <sec> inside <abstract>, so "has no <sec>
+        ancestor" admits them; being first in document order they won the key
+        and the body's Methods was dropped by the ``key not in sections``
+        guard. Measured on PMC4235044 (Mol Vis, abstract =
+        Purpose/Methods/Results/Conclusions): ``methods`` returned 125
+        characters of abstract instead of the paper's 7,196-character Methods,
+        so the animal age never reached a consumer asking for Methods.
+        """
+        xml = (
+            b"<article>"
+            b"<front><article-meta><abstract>"
+            b"<sec><title>Purpose</title><p>We asked a question.</p></sec>"
+            b"<sec><title>Methods</title><p>Using RNA-Seq.</p></sec>"
+            b"<sec><title>Results</title><p>We found things.</p></sec>"
+            b"</abstract></article-meta></front>"
+            b"<body>"
+            b"<sec><title>Introduction</title><p>Background here.</p></sec>"
+            b"<sec><title>Methods</title>"
+            b"<sec><title>Animals</title>"
+            b"<p>Retinas were dissected from mice 48 to 120 days old.</p></sec>"
+            b"</sec>"
+            b"<sec><title>Results</title><p>Rod transcripts were lost.</p></sec>"
+            b"</body></article>"
+        )
+        secs = parse_jats_sections(xml)
+        # The BODY's Methods wins, with its nested subsection text intact.
+        assert "48 to 120 days old" in secs["methods"]
+        assert "Using RNA-Seq" not in secs["methods"]
+        assert "Rod transcripts were lost" in secs["results"]
+        # Abstract-only headings never become body sections…
+        assert "purpose" not in secs
+        # …and the abstract itself is still captured whole.
+        assert "We asked a question" in secs["abstract"]
+        assert "Using RNA-Seq" in secs["abstract"]

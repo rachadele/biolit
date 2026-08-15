@@ -172,26 +172,51 @@ def parse_jats_sections(xml_bytes: bytes) -> dict[str, str]:
     # redundant per-subsection copies. Genuinely flat layouts (each
     # Methods subsection a top-level <sec> with no parent wrapper) are
     # unaffected — those secs have no <sec> ancestor and are all kept.
+    # A STRUCTURED ABSTRACT's subsections are <sec> too, and they live inside
+    # <abstract> rather than inside another <sec> — so "no <sec> ancestor" lets
+    # them through as if they were body sections. They then come FIRST in
+    # document order and claim the ``methods`` / ``results`` keys, and the
+    # ``key not in sections`` guard below silently drops the body's real
+    # sections. Introduction / Discussion survive only because no abstract has
+    # subsections by those names.
+    #
+    # Measured on PMC4235044 (Mol Vis; abstract = Purpose/Methods/Results/
+    # Conclusions): ``methods`` came back as 125 characters of abstract instead
+    # of the paper's 7,196-character Methods, so the animal age — "Retinas were
+    # dissected from mice 48 to 120 days old" — was absent from the parse. Any
+    # consumer selecting sections_wanted=["methods", ...] therefore received a
+    # few hundred characters of abstract LABELLED as Methods, which is worse
+    # than an empty result: it reads as a successful full-text parse.
+    #
+    # The abstract itself is not lost — step 1 above already captured it whole
+    # under the ``abstract`` key.
     try:
         try:
             sec_elements = root.xpath(
                 "//*[local-name()='sec']"
                 "[not(ancestor::*[local-name()='sec'])]"
+                "[not(ancestor::*[local-name()='abstract'])]"
             )
         except AttributeError:
             all_secs = root.findall(".//{*}sec")
             _parent = {child: parent for parent in root.iter() for child in parent}
 
-            def _has_sec_ancestor(el) -> bool:
+            def _has_excluded_ancestor(el) -> bool:
+                """Nested in another <sec> (parent already carries the text) or
+                inside <abstract> (a structured-abstract subsection)."""
                 p = _parent.get(el)
                 while p is not None:
                     tag = getattr(p, "tag", "")
-                    if isinstance(tag, str) and (tag == "sec" or tag.endswith("}sec")):
+                    if isinstance(tag, str) and (
+                        tag in ("sec", "abstract")
+                        or tag.endswith("}sec")
+                        or tag.endswith("}abstract")
+                    ):
                         return True
                     p = _parent.get(p)
                 return False
 
-            sec_elements = [s for s in all_secs if not _has_sec_ancestor(s)]
+            sec_elements = [s for s in all_secs if not _has_excluded_ancestor(s)]
     except Exception:
         sec_elements = []
 
