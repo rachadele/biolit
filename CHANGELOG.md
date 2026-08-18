@@ -2,6 +2,13 @@
 
 All notable changes to `biolit` are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **JATS: structured-abstract `<sec>` subsections no longer shadow body sections** — a structured abstract's Purpose/Methods/Results are `<sec>` elements inside `<abstract>`, not inside another `<sec>`; the old "no `<sec>` ancestor" rule admitted them as body sections, and being first in document order they claimed the `methods`/`results` keys ahead of the paper's real Methods/Results. `parse_jats_sections` now excludes `<sec>` descendants of `<abstract>` from body-section extraction; the abstract itself is still captured whole under the `abstract` key.
+- **`select_sections`: an overflowing section no longer blocks later sections** — the truncation loop used to `break` on the first section that didn't fit the char budget, dropping every later section regardless of size. It now fills everything that fits whole first, then spends any leftover budget truncating one more section, so a small back-matter section isn't lost just because an earlier narrative section overflowed.
+- **`select_sections`: `max_tokens=None` now truly disables the budget** — previously documented but not fully honored through all pass-through call sites; needed for non-LLM callers (e.g. checking whether a paper mentions a specific GEO accession) where truncation could silently produce a false "not found".
+
 ## [0.1.39] — 2026-08-12
 
 ### Fixed
