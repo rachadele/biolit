@@ -2,7 +2,7 @@
 
 All notable changes to `biolit` are documented here.
 
-## [Unreleased]
+## [0.1.40] — 2026-08-18
 
 ### Fixed
 - **JATS: structured-abstract `<sec>` subsections no longer shadow body sections** — a structured abstract's Purpose/Methods/Results are `<sec>` elements inside `<abstract>`, not inside another `<sec>`; the old "no `<sec>` ancestor" rule admitted them as body sections, and being first in document order they claimed the `methods`/`results` keys ahead of the paper's real Methods/Results. `parse_jats_sections` now excludes `<sec>` descendants of `<abstract>` from body-section extraction; the abstract itself is still captured whole under the `abstract` key.
