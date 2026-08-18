@@ -6,13 +6,22 @@ DEFAULT_MAX_TOKENS = 12_500  # ~50 000 chars at ~4 chars/token
 def select_sections(
     sections: dict[str, str],
     wanted: list[str] | None = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_tokens: int | None = DEFAULT_MAX_TOKENS,
 ) -> str:
     """Concatenate *wanted* sections from *sections* up to *max_tokens*.
 
     If *wanted* is None or empty, all sections are included.
     Sections are joined with a labelled header line for readability.
     Token count is approximated as len(text) // 4.
+
+    ``max_tokens=None`` (or 0) disables the budget entirely. **Use it for any
+    consumer that is not an LLM.** The cap exists to bound a prompt — the
+    ``mcp_server`` docstring calls it *"maximum tokens of paper text sent to
+    the LLM"* — so applying it to a string search (does this paper mention
+    ``GSE123945``?) silently answers "no" for a paper that says yes further
+    down. That is a category error rather than a tuning problem: a grep has no
+    context window, and the caller cannot tell a real absence from a budgeted
+    one.
     """
     if not sections:
         return ""
@@ -53,18 +62,43 @@ def select_sections(
             rest_items.append((key, text))
     ordered_items = priority_items + rest_items
 
-    max_chars = max_tokens * 4
-    parts = []
-    total = 0
-    for key, text in ordered_items:
-        header = f"=== {key.upper()} ===\n"
-        chunk = header + text + "\n"
-        if total + len(chunk) > max_chars:
-            remaining = max_chars - total - len(header)
-            if remaining > 0:
-                parts.append(header + text[:remaining] + " [truncated]")
-            break
-        parts.append(chunk)
-        total += len(chunk)
+    # No budget: hand back everything. Used by consumers that are not an LLM
+    # — see the ``max_tokens`` note in the docstring.
+    if not max_tokens:
+        return "\n".join(f"=== {k.upper()} ===\n" + t + "\n"
+                         for k, t in ordered_items)
 
-    return "\n".join(parts)
+    max_chars = max_tokens * 4
+    kept: dict[str, str] = {}
+    total = 0
+
+    # Pass 1 — everything that fits WHOLE, in promoted order.
+    #
+    # 🛑 Skip, do not stop. This loop used to ``break`` on the first section
+    # that overflowed, which dropped every LATER section whatever its size —
+    # so one long narrative section made a 200-character back-matter section
+    # unreachable even though the budget had room for it. Promotion (above)
+    # protects the sections we can name; this protects the ones we cannot.
+    for key, text in ordered_items:
+        chunk = f"=== {key.upper()} ===\n" + text + "\n"
+        if total + len(chunk) <= max_chars:
+            kept[key] = text
+            total += len(chunk)
+
+    # Pass 2 — spend whatever is left truncating the first section still
+    # omitted. Deferring truncation to a second pass is what makes pass 1
+    # safe: filling the tail greedily would consume the budget an
+    # already-fitting later section needed.
+    for key, text in ordered_items:
+        if key in kept:
+            continue
+        header = f"=== {key.upper()} ===\n"
+        remaining = max_chars - total - len(header) - len(" [truncated]\n")
+        # ``not kept`` is the floor — never return nothing when there is
+        # content and a budget; a caller asking for 25 tokens wants its 25.
+        if remaining > 500 or not kept:
+            kept[key] = text[:max(remaining, 0)] + " [truncated]"
+        break
+
+    return "\n".join(f"=== {k.upper()} ===\n" + kept[k] + "\n"
+                     for k, _ in ordered_items if k in kept)
