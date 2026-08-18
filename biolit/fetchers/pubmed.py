@@ -1,5 +1,6 @@
 """PubMed / PubMed Central fetchers using NCBI E-utilities."""
 import os
+import threading
 import time
 import xml.etree.ElementTree as ET
 
@@ -8,7 +9,31 @@ import requests
 NCBI_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 IDCONV_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
 
-_RATE_DELAY = 0.4  # seconds between NCBI requests (unauthenticated = 3/s max)
+_MAX_RETRIES = 3
+
+# Global (cross-thread) rate gate. NCBI allows 3 req/s anonymously and 10/s
+# with an API key. A bare time.sleep after each call only paces the calling
+# thread — under a thread pool, N threads each pace themselves independently
+# and the AGGREGATE request rate blows past NCBI's ceiling and trips 429s,
+# regardless of whether an API key is set. This lock serializes request
+# *timing* across every caller in the process so the aggregate stays under
+# the (key-aware) ceiling; the HTTP itself still runs concurrently.
+_RATE_LOCK = threading.Lock()
+_LAST_REQ = 0.0
+
+
+def _rate_interval() -> float:
+    return (1.0 / 9.0) if os.environ.get("NCBI_API_KEY") else (1.0 / 2.5)
+
+
+def _throttle() -> None:
+    global _LAST_REQ
+    with _RATE_LOCK:
+        now = time.monotonic()
+        wait = _LAST_REQ + _rate_interval() - now
+        if wait > 0:
+            time.sleep(wait)
+        _LAST_REQ = time.monotonic()
 
 
 def _ncbi_params(**kwargs) -> dict:
@@ -20,14 +45,32 @@ def _ncbi_params(**kwargs) -> dict:
     return params
 
 
+def _ncbi_get(url: str, params: dict, *, timeout: float) -> requests.Response:
+    """GET an NCBI endpoint with global throttling and retry-with-backoff on
+    429 / 5xx. Raises ``requests.exceptions.HTTPError`` on a non-retryable or
+    retry-exhausted failure — same contract as ``requests.get(...).raise_for_status()``,
+    just with retries in between."""
+    for attempt in range(_MAX_RETRIES + 1):
+        _throttle()
+        resp = requests.get(url, params=params, timeout=timeout)
+        try:
+            resp.raise_for_status()
+            return resp
+        except requests.exceptions.HTTPError:
+            if attempt < _MAX_RETRIES and (resp.status_code == 429 or 500 <= resp.status_code < 600):
+                retry_after = resp.headers.get("Retry-After")
+                time.sleep(float(retry_after) if retry_after else 2 ** attempt)
+                continue
+            raise
+
+
 def fetch_pubmed_metadata(pmid: str) -> dict | None:
     """Fetch title, abstract, MeSH terms, and DOI for a PMID."""
-    resp = requests.get(
+    resp = _ncbi_get(
         f"{NCBI_BASE}efetch.fcgi",
-        params=_ncbi_params(db="pubmed", id=pmid, rettype="xml", retmode="xml"),
+        _ncbi_params(db="pubmed", id=pmid, rettype="xml", retmode="xml"),
         timeout=15,
     )
-    resp.raise_for_status()
     root = ET.fromstring(resp.content)
     article = root.find(".//PubmedArticle")
     if article is None:
@@ -81,7 +124,6 @@ def fetch_pubmed_metadata(pmid: str) -> dict | None:
             affiliations.append(t)
     institution = affiliations[0] if affiliations else None
 
-    time.sleep(_RATE_DELAY)
     return {
         "pmid": pmid,
         "doi": doi,
@@ -105,12 +147,7 @@ def _idconv_lookup(accession: str) -> dict:
     Returns the first record dict, or {} on failure.
     """
     try:
-        resp = requests.get(
-            IDCONV_URL,
-            params={"ids": accession, "format": "json"},
-            timeout=10,
-        )
-        resp.raise_for_status()
+        resp = _ncbi_get(IDCONV_URL, {"ids": accession, "format": "json"}, timeout=10)
         records = resp.json().get("records", [])
         return records[0] if records else {}
     except Exception:
@@ -130,12 +167,11 @@ def doi_to_pmcid(doi: str) -> str | None:
 def doi_to_pmid(doi: str) -> str | None:
     """Convert a DOI to a PMID via PubMed esearch."""
     try:
-        resp = requests.get(
+        resp = _ncbi_get(
             f"{NCBI_BASE}esearch.fcgi",
-            params=_ncbi_params(db="pubmed", term=f"{doi}[doi]", retmode="json"),
+            _ncbi_params(db="pubmed", term=f"{doi}[doi]", retmode="json"),
             timeout=10,
         )
-        resp.raise_for_status()
         ids = resp.json().get("esearchresult", {}).get("idlist", [])
         return str(ids[0]) if ids else None
     except Exception:
@@ -149,14 +185,11 @@ def fetch_pmc_fulltext(pmid: str) -> bytes | None:
         return None
     numeric_id = pmcid.replace("PMC", "")
     try:
-        resp = requests.get(
+        resp = _ncbi_get(
             f"{NCBI_BASE}efetch.fcgi",
-            params=_ncbi_params(db="pmc", id=numeric_id, rettype="xml", retmode="xml"),
+            _ncbi_params(db="pmc", id=numeric_id, rettype="xml", retmode="xml"),
             timeout=30,
         )
-        resp.raise_for_status()
-        time.sleep(_RATE_DELAY)
         return resp.content
     except Exception:
         return None
-
