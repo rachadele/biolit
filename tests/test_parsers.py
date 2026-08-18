@@ -195,6 +195,51 @@ class TestSelectSections:
         out = select_sections(secs)
         assert "=== INTRODUCTION ===" in out
 
+    # --- an overflow must SKIP, not stop -------------------------------
+    # Promotion protects the back-matter sections we can name by keyword.
+    # These cover the ones we cannot: a later section that fits was being
+    # dropped anyway, because the loop stopped at the first overflow.
+
+    def test_a_later_section_that_fits_is_not_lost_to_an_earlier_overflow(self):
+        secs = {
+            "results": "r" * 60000,          # overflows the budget alone
+            "odd_back_matter": "Accession GSE318045 lives here.",
+        }
+        out = select_sections(secs, max_tokens=12_500)
+        assert "GSE318045" in out, "a short later section still fits"
+
+    def test_overflow_does_not_swallow_the_budget_a_later_section_needs(self):
+        """Truncation is deferred to a second pass for this reason: filling
+        the tail greedily leaves nothing for a section that fits whole."""
+        secs = {
+            "big": "x" * 60000,
+            "small_a": "alpha",
+            "small_b": "beta",
+        }
+        out = select_sections(secs, max_tokens=12_500)
+        assert "alpha" in out and "beta" in out
+
+    def test_budget_is_still_respected(self):
+        secs = {"a": "x" * 60000, "b": "y" * 60000, "c": "short"}
+        out = select_sections(secs, max_tokens=12_500)
+        assert len(out) <= 12_500 * 4 + 500      # + header / marker overhead
+
+    def test_max_tokens_none_disables_the_budget(self):
+        """A string search is not a prompt; it has no context window."""
+        secs = {"results": "r" * 60000,
+                "data availability": "Deposited under GSE318045."}
+        out = select_sections(secs, max_tokens=None)
+        assert len(out) > 59_000
+        assert "truncated" not in out
+        assert "GSE318045" in out
+
+    def test_promotion_still_wins_under_a_budget(self):
+        """Guards the behaviour already on main, which these changes must
+        not regress: back-matter is promoted ahead of narrative."""
+        secs = {"results": "r" * 60000,
+                "data availability": "Deposited under GSE318045."}
+        assert "GSE318045" in select_sections(secs, max_tokens=12_500)
+
     def test_data_availability_survives_truncation(self):
         secs = {
             "results": "x" * 5000,

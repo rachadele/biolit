@@ -361,7 +361,7 @@ def resolve_fulltext(
     paper: dict,
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_tokens: int | None = DEFAULT_MAX_TOKENS,
 ) -> tuple[str, str, dict]:
     """Attempt to fetch full text for *paper*, returning (text, source_label, artifacts).
 
@@ -650,7 +650,7 @@ def _resolve_geo_fulltext(
     paper: dict,
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_tokens: int | None = DEFAULT_MAX_TOKENS,
 ) -> tuple[str, str, dict]:
     """Attempt to fetch full text via linked PMIDs for a GEO record.
 
@@ -1027,7 +1027,7 @@ def _resolve_one(
     fallback_pmid: str | None = None,
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_tokens: int | None = DEFAULT_MAX_TOKENS,
 ) -> PaperResult:
     """Resolve a single id (accession / DOI / PMID) to a :class:`PaperResult`."""
     if not record_id:
@@ -1119,7 +1119,7 @@ def fetch_paper(
     *,
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_tokens: int | None = DEFAULT_MAX_TOKENS,
 ) -> PaperResult:
     """Fetch best-available full text given any of accession / PMID / DOI.
 
@@ -1182,7 +1182,7 @@ def run(
     output_path: str = "results.csv",
     unpaywall_email: str | None = None,
     sections_wanted: list[str] | None = None,
-    max_tokens: int = DEFAULT_MAX_TOKENS,
+    max_tokens: int | None = DEFAULT_MAX_TOKENS,
     markdown: bool = False,
     markdown_max_tokens: int = 1024,
     extraction_max_tokens: int = 4096,
