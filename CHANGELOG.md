@@ -2,6 +2,12 @@
 
 All notable changes to `biolit` are documented here.
 
+## [0.1.41] — 2026-08-19
+
+### Fixed
+- **PubMed: global cross-thread rate limiting** — `_RATE_DELAY`/`time.sleep` after each call only paced the calling thread; under a thread pool, N threads each pacing themselves independently let the aggregate request rate across threads blow past NCBI's ceiling (3/s anonymous, 10/s with `NCBI_API_KEY`) and trip 429s. A global lock now serializes request *timing* across every caller in the process, scaled by whether `NCBI_API_KEY` is set; the HTTP calls themselves still run concurrently.
+- **PubMed: retry with backoff on 429/5xx** — requests that previously raised immediately on a 429 or 5xx response now retry up to 3 times, honoring `Retry-After` when present and falling back to exponential backoff.
+
 ## [0.1.40] — 2026-08-18
 
 ### Fixed
