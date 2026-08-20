@@ -346,15 +346,32 @@ def _pdf_to_sections_text(
     return None
 
 
+
+# Keys parse_jats_sections() can emit that are NOT article body content:
+# "abstract" is the abstract itself; "footnotes" / "notes" come from <fn> /
+# <notes> elements, which are typically funding/ethics/data-availability/
+# address notes -- not Methods/Results/Discussion. A record whose only
+# sections are drawn from this set has no real body text, even though it
+# isn't literally `{"abstract"}` alone.
+_NON_BODY_SECTION_KEYS = frozenset({"abstract", "footnotes", "notes"})
+
+
 def _more_than_abstract(secs: dict) -> bool:
     """True if a parsed JATS section dict has real full-text content.
 
-    PMC/Europe PMC sometimes store abstract-only stubs (e.g. bioRxiv/medRxiv
-    preprints indexed via NIH's Preprint Pilot) whose JATS has an <abstract>
-    but no body. ``parse_jats_sections`` faithfully returns ``{"abstract": ...}``
-    for these, which must NOT be mistaken for full-text success.
+    PMC/Europe PMC sometimes store abstract-only stubs -- either genuinely
+    abstract-only (e.g. bioRxiv/medRxiv preprints indexed via NIH's Preprint
+    Pilot), or a publisher-restricted record where NCBI's efetch API withholds
+    the body even though the article is displayable on the PMC website (a
+    licensing-driven web-vs-API gap, not a parser bug). Both cases return only
+    ``{"abstract"}`` or ``{"abstract", "footnotes", ...}`` from
+    ``parse_jats_sections`` -- checking for exact equality to ``{"abstract"}``
+    missed the second case (2026-08-20: PMID 17560558 parsed to
+    ``{"abstract", "footnotes"}``, wrongly labeled ``is_fulltext=True`` with no
+    Methods/Results content at all). Require at least one section outside
+    ``_NON_BODY_SECTION_KEYS``.
     """
-    return bool(secs) and set(secs) != {"abstract"}
+    return bool(set(secs) - _NON_BODY_SECTION_KEYS)
 
 
 def resolve_fulltext(

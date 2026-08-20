@@ -550,6 +550,26 @@ class TestResolveFulltextAbstractOnlyStub:
         assert source == "preprint_fulltext"
         assert "Methods" in text or "genotyped" in text
 
+    @patch("biolit.pipeline.fetch_preprint")
+    @patch("biolit.pipeline.fetch_europepmc_fulltext")
+    @patch("biolit.pipeline.fetch_pmc_fulltext")
+    def test_falls_through_when_pmc_body_is_only_footnotes(
+        self, mock_pmc, mock_epmc, mock_preprint, sample_pubmed_metadata, sample_jats_xml
+    ):
+        # Regression (2026-08-20, PMID 17560558): PMC's JATS has an <abstract>
+        # and an address <fn>, but no real body <sec> -- {"abstract", "footnotes"}
+        # was wrongly accepted as full text since it isn't literally {"abstract"}.
+        mock_pmc.return_value = (
+            b"<article><abstract><p>Stub abstract.</p></abstract>"
+            b"<back><fn-group><fn><p>Dept of Something, Somewhere.</p></fn></fn-group></back>"
+            b"</article>"
+        )
+        mock_epmc.return_value = None
+        mock_preprint.return_value = sample_jats_xml  # real full text
+        text, source, _ = resolve_fulltext(sample_pubmed_metadata)
+        assert source == "preprint_fulltext"
+        assert "Methods" in text or "genotyped" in text
+
 
 # ---------------------------------------------------------------------------
 # resolve_fulltext — Semantic Scholar step
