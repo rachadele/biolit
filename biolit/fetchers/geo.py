@@ -277,6 +277,14 @@ def _parse_samples(root, ns: str) -> list[dict]:
             ("Library-Source", "library_source"),
             ("Library-Selection", "library_selection"),
             ("Type", "sample_type"),
+            # Data-Processing is sample-level in MINiML. Added 2026-08-21:
+            # gemma-curation-agents kept a whole parallel MINiML fetcher
+            # (`shared/geo_miniml`) alive partly for this one field — its
+            # single-cell tool heuristic reads it — so its absence here was
+            # paying for a second fetch and a second disk cache of the same
+            # XML. With it, this record is a strict superset and there is one
+            # fetcher again.
+            ("Data-Processing", "data_processing"),
         ):
             v = (s.findtext(f"{ns}{tag}") or "").strip()
             if v:
