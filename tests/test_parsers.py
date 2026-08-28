@@ -308,3 +308,229 @@ class TestSelectSections:
         # …and the abstract itself is still captured whole.
         assert "We asked a question" in secs["abstract"]
         assert "Using RNA-Seq" in secs["abstract"]
+
+
+class TestHoistedFloatTables:
+    """PMC hoists <table-wrap> out of <body> into <floats-group>, where it has
+    no <sec> ancestor and no xpath in the parse reached it. Measured on PMID
+    38761795 (Mol Cell 2024): the article's Key Resources Table — 13 RRIDs,
+    cell lines, deposited data — parsed to 0 characters.
+
+    Hoisting is PMC packaging, not one publisher's house style, so this is not
+    scoped to Cell Press; Cell Press is only where the hoisted table is worth
+    the most.
+    """
+
+    def test_hoisted_table_wrap_is_reached(self, floats_group_jats_xml):
+        secs = parse_jats_sections(floats_group_jats_xml)
+        assert "methods: tables" in secs
+        tables = secs["methods: tables"]
+        assert "REAGENT or RESOURCE" in tables
+        assert "RRID: AB_830684" in tables
+        assert "CVCL_0006" in tables
+
+    def test_table_cells_stay_one_per_line(self, floats_group_jats_xml):
+        """``_text_of`` needed no change — ``table-wrap``/``table``/``tr``/
+        ``th``/``td`` are already in ``_JATS_BLOCK_TAGS``. This is the
+        assertion that the serializer was never the broken half."""
+        tables = parse_jats_sections(floats_group_jats_xml)["methods: tables"]
+        lines = [ln.strip() for ln in tables.splitlines() if ln.strip()]
+        assert "anti-human CD14 Antibody" in lines
+        assert "BioLegend" in lines
+        assert "Cat# 325611; RRID: AB_830684" in lines
+        # Adjacent cells must not glue into one token.
+        assert "RESOURCESOURCE" not in tables
+        assert "AntibodyBioLegend" not in tables
+
+    def test_hoisted_figure_captions_are_not_collected(self, floats_group_jats_xml):
+        """Only <table-wrap> is collected. <fig> lives in the same
+        <floats-group> and is deliberately left there."""
+        secs = parse_jats_sections(floats_group_jats_xml)
+        assert "UMAP embedding" not in secs["methods: tables"]
+        assert "UMAP embedding" not in "".join(secs.values())
+
+    def test_body_sections_are_unaffected(self, floats_group_jats_xml):
+        secs = parse_jats_sections(floats_group_jats_xml)
+        assert "RPMI-1640" in secs["methods"]
+        assert "key resources table" in secs["results"]
+
+    def test_table_inside_a_sec_is_not_collected_twice(self):
+        """A <table-wrap> that is already inside a <sec> is carried by that
+        section's own ``_text_of``. Collecting it again would put the same
+        rows in the output twice and spend the excerpt budget on the
+        duplicate."""
+        xml = (
+            b"<article><body>"
+            b"<sec><title>Methods</title>"
+            b"<p>Reagents are listed below.</p>"
+            b'<table-wrap id="T1"><caption><p>Reagents</p></caption>'
+            b"<table><tbody>"
+            b"<tr><td>anti-CD3</td><td>RRID: AB_000001</td></tr>"
+            b"</tbody></table></table-wrap>"
+            b"</sec></body></article>"
+        )
+        secs = parse_jats_sections(xml)
+        assert "AB_000001" in secs["methods"]
+        assert "methods: tables" not in secs
+        assert "".join(secs.values()).count("AB_000001") == 1
+
+    def test_only_the_unreached_table_is_collected(self):
+        """Mixed layout: one table inside a <sec>, one hoisted. The hoisted
+        one is picked up; the in-<sec> one is not repeated."""
+        xml = (
+            b"<article>"
+            b"<body><sec><title>Methods</title>"
+            b'<table-wrap id="T1"><table><tbody>'
+            b"<tr><td>in-sec</td><td>RRID: AB_000001</td></tr>"
+            b"</tbody></table></table-wrap></sec></body>"
+            b'<floats-group><table-wrap id="T2"><table><tbody>'
+            b"<tr><td>hoisted</td><td>RRID: AB_000002</td></tr>"
+            b"</tbody></table></table-wrap></floats-group>"
+            b"</article>"
+        )
+        secs = parse_jats_sections(xml)
+        whole = "".join(secs.values())
+        assert whole.count("AB_000001") == 1
+        assert whole.count("AB_000002") == 1
+        assert "AB_000002" in secs["methods: tables"]
+        assert "AB_000001" not in secs["methods: tables"]
+
+    def test_no_tables_key_when_the_article_has_no_floats(self, sample_jats_xml):
+        assert "methods: tables" not in parse_jats_sections(sample_jats_xml)
+
+    # --- the end-to-end assertion --------------------------------------
+    # Reaching the table in ``parse_jats_sections`` is only half of it:
+    # ``select_sections`` keeps a section only when a wanted string is a
+    # SUBSTRING of its key, so a key like "tables" would be collected above and
+    # dropped one function later — the fix would look done and change nothing.
+
+    def test_hoisted_table_survives_select_sections(self, floats_group_jats_xml):
+        secs = parse_jats_sections(floats_group_jats_xml)
+        out = select_sections(secs, wanted=["methods", "materials", "results"])
+        assert "=== METHODS: TABLES ===" in out
+        assert "RRID: AB_830684" in out
+        assert "CVCL_0006" in out
+
+
+class TestCellPressMethodsHeadings:
+    """Cell Press does not spell the Methods heading "Methods".
+    ``select_sections`` filters by substring against
+    ``wanted=["methods", "materials", "results"]`` and falls back to keeping
+    everything only when NOTHING matched — so a paper with a Results section
+    and an ``Experimental Procedures`` section kept Results and lost the
+    Methods entirely.
+    """
+
+    _WANTED = ["methods", "materials", "results"]
+
+    def _parse(self, methods_title: str):
+        xml = (
+            "<article><body>"
+            "<sec><title>Results</title><p>We found 47 genes.</p></sec>"
+            f"<sec><title>{methods_title}</title>"
+            "<p>Mice were C57BL/6J from the Jackson Laboratory.</p></sec>"
+            "</body></article>"
+        ).encode()
+        return parse_jats_sections(xml)
+
+    def test_experimental_procedures_is_keyed_under_methods(self):
+        secs = self._parse("Experimental Procedures")
+        assert "experimental procedures" not in secs
+        assert "C57BL/6J" in secs["methods (experimental procedures)"]
+
+    def test_experimental_procedures_survives_select_sections(self):
+        """The one that would have caught a KNOWN_SECTIONS-only fix."""
+        out = select_sections(self._parse("Experimental Procedures"),
+                              wanted=self._WANTED)
+        assert "C57BL/6J" in out
+
+    def test_singular_experimental_procedure_survives(self):
+        out = select_sections(self._parse("Experimental Procedure"),
+                              wanted=self._WANTED)
+        assert "C57BL/6J" in out
+
+    def test_star_methods_survives_select_sections(self):
+        """``STAR Methods`` is NOT in ``KNOWN_SECTIONS``: it already resolves
+        through the ``methods`` entry, because ``_HEADING_RE`` searches rather
+        than anchors. Pinned because listing it there without an alias would
+        re-key it to ``star methods`` and drop it."""
+        secs = self._parse("STAR Methods")
+        assert "C57BL/6J" in secs["methods"]
+        assert "C57BL/6J" in select_sections(secs, wanted=self._WANTED)
+
+    def test_star_methods_with_a_star_glyph_survives(self):
+        secs = self._parse("STAR★Methods")
+        assert "C57BL/6J" in select_sections(secs, wanted=self._WANTED)
+
+    def test_flat_star_methods_subsections_all_survive(self):
+        """When PMC deposits a STAR Methods article flat, its subsections are
+        top-level <sec>s. Each alias keeps a DISTINCT key — the section loop
+        writes a key only when ``key not in sections``, so folding them all
+        onto ``methods`` would silently drop all but the first."""
+        xml = (
+            "<article><body>"
+            "<sec><title>STAR★Methods</title><p>Overview.</p></sec>"
+            "<sec><title>Key resources table</title>"
+            "<p>THP-1 ATCC RRID: CVCL_0006</p></sec>"
+            "<sec><title>Method Details</title>"
+            "<p>Libraries were sequenced on a NovaSeq.</p></sec>"
+            "</body></article>"
+        ).encode()
+        secs = parse_jats_sections(xml)
+        assert "Overview" in secs["methods"]
+        assert "CVCL_0006" in secs["methods: key resources table"]
+        assert "NovaSeq" in secs["methods (method details)"]
+        out = select_sections(secs, wanted=self._WANTED)
+        assert "CVCL_0006" in out
+        assert "NovaSeq" in out
+
+
+class TestSyntheticSectionsDoNotDisarmTheFallback:
+    """A hoisted table must not switch off `select_sections`' safety net.
+
+    `select_sections` hands back EVERY section when none matched *wanted* —
+    "we recognized none of this paper's headings, so filtering would throw the
+    paper away". The hoisted-`<table-wrap>` collector keys its section
+    `methods: tables`, which contains "methods"; without a guard that key is a
+    match, the fallback stops firing, and a paper whose real headings are all
+    unrecognized collapses to its tables alone.
+
+    Measured on PMC7614342 before the guard: 38,204 -> 2,821 selected chars, a
+    93% loss. 18 of 207 sampled papers (8.7%) depend on this fallback, so it is
+    not an edge case.
+    """
+
+    WANTED = ["methods", "materials", "results"]
+
+    def test_unrecognized_headings_still_return_the_whole_paper(self):
+        from biolit.parsers.utils import select_sections
+        sections = {
+            "experimental procedures": "MICE WERE HOUSED " * 200,
+            "findings": "WE OBSERVED " * 200,
+            "methods: tables": "RRID:CVCL_0459",
+        }
+        out = select_sections(sections, wanted=self.WANTED, max_tokens=None)
+        assert "MICE WERE HOUSED" in out, \
+            "the synthesized table key disarmed the no-match fallback"
+        assert "WE OBSERVED" in out
+        assert "RRID:CVCL_0459" in out, "the table must still be included"
+
+    def test_a_real_methods_heading_still_filters(self):
+        """The guard must not turn the filter off when a heading DID match."""
+        from biolit.parsers.utils import select_sections
+        sections = {
+            "methods": "REAL METHODS",
+            "discussion": "SPECULATION",
+            "methods: tables": "RRID:CVCL_0459",
+        }
+        out = select_sections(sections, wanted=self.WANTED, max_tokens=None)
+        assert "REAL METHODS" in out and "RRID:CVCL_0459" in out
+        assert "SPECULATION" not in out, \
+            "a matching heading must still exclude non-wanted sections"
+
+    def test_a_table_only_document_is_not_thrown_away(self):
+        """Only synthesized sections present: return them, not nothing."""
+        from biolit.parsers.utils import select_sections
+        out = select_sections({"methods: tables": "RRID:CVCL_0459"},
+                              wanted=self.WANTED, max_tokens=None)
+        assert "RRID:CVCL_0459" in out
