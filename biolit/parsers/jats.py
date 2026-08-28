@@ -107,6 +107,20 @@ KNOWN_SECTIONS = [
     "background",
     "methods",
     "materials and methods",
+    # Cell Press spellings of the Methods section. ``STAR Methods`` is not
+    # listed because it already resolves through the ``methods`` entry above —
+    # the word is inside the heading, and ``_HEADING_RE`` searches rather than
+    # anchors. These four do not contain any listed heading, so they were
+    # keyed by their raw title text and lost downstream (see
+    # ``_SECTION_ALIASES``). ``Experimental Procedures`` is the Methods
+    # heading in pre-2017 Cell / Neuron / Cancer Cell and in Stem Cell Reports
+    # to this day; ``Method Details`` and ``Key Resources Table`` are STAR
+    # Methods subsections, top-level <sec>s whenever PMC deposits the article
+    # flat.
+    "experimental procedures",
+    "experimental procedure",
+    "method details",
+    "key resources table",
     "results",
     "discussion",
     "conclusion",
@@ -118,12 +132,32 @@ _HEADING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Recognised headings that must be RE-KEYED to be usable downstream.
+#
+# ``select_sections`` keeps a section only when one of the caller's wanted
+# strings is a SUBSTRING of its key, and the wanted lists in use ask for
+# "methods" / "materials" / "results". So recognising ``Experimental
+# Procedures`` as a heading is not enough on its own: the key has to carry the
+# substring, or the section is parsed here and dropped one function later —
+# and because ``select_sections`` falls back to "keep everything" only when
+# NOTHING matched, a paper with a Results section loses its Methods entirely.
+#
+# Each alias keeps a DISTINCT key rather than collapsing onto plain
+# ``methods``: the section loop below writes a key only when
+# ``key not in sections``, so two headings sharing one key means the second is
+# silently discarded.
+_SECTION_ALIASES = {
+    "experimental procedures": "methods (experimental procedures)",
+    "experimental procedure": "methods (experimental procedures)",
+    "method details": "methods (method details)",
+    "key resources table": "methods: key resources table",
+}
+
 
 def _normalise_heading(text: str) -> str:
     m = _HEADING_RE.search(text)
-    if m:
-        return m.group(1).lower()
-    return text.lower().strip()
+    key = m.group(1).lower() if m else text.lower().strip()
+    return _SECTION_ALIASES.get(key, key)
 
 
 def parse_jats_sections(xml_bytes: bytes) -> dict[str, str]:
@@ -132,6 +166,13 @@ def parse_jats_sections(xml_bytes: bytes) -> dict[str, str]:
     Recognised section names: abstract, introduction, background, methods,
     materials and methods, results, discussion, conclusion/conclusions.
     Unknown sections are included under their title text as the key.
+
+    Beyond body ``<sec>``s the parse also collects ``<fn>`` and ``<notes>``
+    back-matter, and — under ``methods: tables`` — any ``<table-wrap>`` that
+    no ``<sec>`` / ``<abstract>`` / ``<fn>`` / ``<notes>`` already carries.
+    That last one covers PMC's ``<floats-group>``, where PMC hoists floats out
+    of the body for articles from EVERY publisher, so hoisted tables are
+    collected for all of them rather than for one imprint's layout.
     """
     try:
         root = _parse_xml(xml_bytes)
@@ -266,6 +307,68 @@ def parse_jats_sections(xml_bytes: bytes) -> dict[str, str]:
     notes_text = "\n".join(t for n in notes_elements if (t := _text_of(n)))
     if notes_text:
         sections["notes"] = notes_text
+
+    # 5. <table-wrap> elements that no earlier step reaches.
+    #
+    # PMC HOISTS floats — <table-wrap> and <fig> — out of the body into a
+    # sibling <floats-group> under <article>, leaving only an <xref> behind in
+    # the prose. A hoisted <table-wrap> has no <sec> ancestor, so no xpath
+    # above walks to it and the whole table was dropped. Hoisting is a PMC
+    # packaging convention, not one publisher's house style, so this collects
+    # hoisted tables for EVERY journal. It is Cell Press where it costs the
+    # most, because the table Cell Press hoists is the Key Resources Table —
+    # cell lines, mouse strains, antibodies and their RRIDs, the densest
+    # identifier block in the article.
+    #
+    # Measured on PMID 38761795 (Mol Cell 2024): the article's only
+    # <table-wrap> sits at /article/floats-group/table-wrap, carries 13 RRIDs,
+    # and none of them appeared in the parsed text.
+    #
+    # The serializer needed no change — ``table-wrap``/``table``/``tr``/``th``/
+    # ``td`` are already in ``_JATS_BLOCK_TAGS``, so ``_text_of`` emits one
+    # cell per line. This step is reachability only.
+    #
+    # The ancestor filter is the anti-duplication guard: a <table-wrap> inside
+    # a <sec> (or <abstract> / <fn> / <notes>) is already carried by that
+    # element's own ``_text_of`` above, and re-emitting it would put the same
+    # rows in the output twice.
+    #
+    # The key CONTAINS "methods" deliberately. ``select_sections`` filters by
+    # substring against the caller's wanted list, so a key like "tables" would
+    # be collected here and discarded one function later — the fix would look
+    # done and change nothing.
+    try:
+        try:
+            table_elements = root.xpath(
+                "//*[local-name()='table-wrap']"
+                "[not(ancestor::*[local-name()='sec'])]"
+                "[not(ancestor::*[local-name()='abstract'])]"
+                "[not(ancestor::*[local-name()='fn'])]"
+                "[not(ancestor::*[local-name()='notes'])]"
+            )
+        except AttributeError:
+            all_tables = root.findall(".//{*}table-wrap")
+            _parent = {child: parent for parent in root.iter() for child in parent}
+
+            def _already_emitted(el) -> bool:
+                """True when an ancestor's own ``_text_of`` already carries
+                this table's rows."""
+                p = _parent.get(el)
+                while p is not None:
+                    if _local_name(getattr(p, "tag", "")) in (
+                        "sec", "abstract", "fn", "notes",
+                    ):
+                        return True
+                    p = _parent.get(p)
+                return False
+
+            table_elements = [t for t in all_tables if not _already_emitted(t)]
+    except Exception:
+        table_elements = []
+
+    table_text = "\n".join(t for tw in table_elements if (t := _text_of(tw)))
+    if table_text:
+        sections["methods: tables"] = table_text
 
     return sections
 
