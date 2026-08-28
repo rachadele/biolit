@@ -2,11 +2,21 @@
 
 DEFAULT_MAX_TOKENS = 12_500  # ~50 000 chars at ~4 chars/token
 
+#: Key for the section holding <table-wrap> elements the document hoisted out
+#: of its body (PMC <floats-group>). Defined HERE, beside the registry below,
+#: and imported by the parser — the two were separate string literals once, and
+#: renaming one would have silently un-registered the section and re-armed the
+#: fallback bug the registry exists to prevent.
+#:
+#: It must contain a substring some caller passes as `wanted` (curation callers
+#: pass "methods"), or `select_sections` drops it and the collector is inert.
+TABLES_SECTION_KEY = "methods: tables"
+
 #: Section keys the PARSER synthesizes rather than reading off a heading in the
 #: document. They participate in selection normally, but must not satisfy the
 #: "did we recognize any of this paper's headings?" test in `select_sections` —
-#: see the comment there.
-SYNTHETIC_SECTION_KEYS = frozenset({"methods: tables"})
+#: see the comment there. Any future synthesized section belongs here.
+SYNTHETIC_SECTION_KEYS = frozenset({TABLES_SECTION_KEY})
 
 
 def select_sections(
