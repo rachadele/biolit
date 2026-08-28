@@ -5,6 +5,8 @@ lxml is unavailable, at the cost of namespace handling fidelity.
 """
 import re
 
+from .utils import TABLES_SECTION_KEY
+
 # JATS block-level elements at whose boundaries we insert ``\n`` during
 # text extraction. Inline elements (``sup``, ``sub``, ``italic``,
 # ``bold``, ``ext-link``, ``xref``, ``inline-formula``, …) are
@@ -368,7 +370,7 @@ def parse_jats_sections(xml_bytes: bytes) -> dict[str, str]:
 
     table_text = "\n".join(t for tw in table_elements if (t := _text_of(tw)))
     if table_text:
-        sections["methods: tables"] = table_text
+        sections[TABLES_SECTION_KEY] = table_text
 
     return sections
 

@@ -534,3 +534,31 @@ class TestSyntheticSectionsDoNotDisarmTheFallback:
         out = select_sections({"methods: tables": "RRID:CVCL_0459"},
                               wanted=self.WANTED, max_tokens=None)
         assert "RRID:CVCL_0459" in out
+
+
+def test_the_synthesized_key_is_registered_and_survives_selection():
+    """The registry and the parser must not be able to drift apart.
+
+    They were two independent string literals: `sections["methods: tables"]`
+    in jats.py and `frozenset({"methods: tables"})` in utils.py. Renaming
+    either would silently un-register the section — re-arming the fallback bug
+    the registry exists to prevent, with no test going red, because every
+    other test asserts on the key's TEXT rather than its registration.
+
+    Now one constant, imported. This test pins the three properties that make
+    it correct, so a future synthesized section has a checklist.
+    """
+    from biolit.parsers.utils import (SYNTHETIC_SECTION_KEYS,
+                                      TABLES_SECTION_KEY, select_sections)
+    from biolit.parsers import jats
+
+    assert jats.TABLES_SECTION_KEY is TABLES_SECTION_KEY, \
+        "the parser must use the shared constant, not its own literal"
+    assert TABLES_SECTION_KEY in SYNTHETIC_SECTION_KEYS, \
+        "a synthesized key that is not registered will disarm the fallback"
+    # …and it must still be selectable, or the collector is inert.
+    out = select_sections({TABLES_SECTION_KEY: "RRID:CVCL_0459"},
+                          wanted=["methods", "materials", "results"],
+                          max_tokens=None)
+    assert "RRID:CVCL_0459" in out, \
+        f"{TABLES_SECTION_KEY!r} contains no substring any curation caller wants"
