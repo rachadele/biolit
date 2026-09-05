@@ -722,6 +722,13 @@ def _resolve_geo_fulltext(
             linked_paper, unpaywall_email, sections_wanted, max_tokens
         )
         if source != "abstract":
+            # 🛑 Keep the rung that actually produced this text. The label has
+            # to stay "geo_linked_fulltext" — it is exact-matched against
+            # _FULLTEXT_SOURCES here and against FULLTEXT_SOURCES in
+            # gemma-curation-agents, so a composite label would silently make
+            # is_fulltext False. Carrying the real source alongside it keeps
+            # both: the contract, and the answer to "was this genuinely PMC?".
+            artifacts = {**artifacts, "geo_linked_source": source}
             return f"{geo_prefix}{text}", "geo_linked_fulltext", artifacts
         if first_linked_abstract is None and text:
             first_linked_abstract = text
@@ -1057,6 +1064,12 @@ class PaperResult:
     pmid: str | None = None
     doi: str | None = None
     title: str | None = None
+    #: When ``source`` is ``geo_linked_fulltext``, the rung that actually
+    #: produced the text (``pmc_fulltext``, ``europepmc_fulltext``,
+    #: ``unpaywall_pdf``, ...). ``None`` for every other source. Without it a
+    #: genuine PMC full text reached via a GEO accession is indistinguishable
+    #: from GEO metadata, and any check keyed on "is this PMC?" answers no.
+    geo_linked_source: str | None = None
 
 
 def _resolve_one(
@@ -1090,6 +1103,7 @@ def _resolve_one(
         text or "", source, source in _FULLTEXT_SOURCES,
         (str(paper.get("pmid")) if paper.get("pmid") else fallback_pmid),
         paper.get("doi"), paper.get("title"),
+        geo_linked_source=(_artifacts or {}).get("geo_linked_source"),
     )
 
 
@@ -1131,7 +1145,8 @@ def _load_paper_cache(key: str):
     try:
         d = json.loads(p.read_text())
         return PaperResult(text=d["text"], source=d["source"], is_fulltext=d["is_fulltext"],
-                           pmid=d.get("pmid"), doi=d.get("doi"), title=d.get("title"))
+                           pmid=d.get("pmid"), doi=d.get("doi"), title=d.get("title"),
+                           geo_linked_source=d.get("geo_linked_source"))
     except Exception:  # noqa: BLE001 — a corrupt cache entry is not fatal
         return None
 
@@ -1144,7 +1159,8 @@ def _cache_and_return(key: str, r: "PaperResult") -> "PaperResult":
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(json.dumps({
                 "key": key, "text": r.text, "source": r.source, "is_fulltext": r.is_fulltext,
-                "pmid": r.pmid, "doi": r.doi, "title": r.title, "cached_at": int(time.time())}))
+                "pmid": r.pmid, "doi": r.doi, "title": r.title,
+                "geo_linked_source": r.geo_linked_source, "cached_at": int(time.time())}))
         except Exception:  # noqa: BLE001
             pass
     return r

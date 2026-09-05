@@ -903,7 +903,38 @@ class TestResolveGeoFulltext:
 
         assert text == f"{self.GEO_PREFIX}full text content"
         assert source == "geo_linked_fulltext"
-        assert artifacts == {"pmc_xml": b"<xml/>"}
+        # The rung that produced the text rides along in artifacts; the label
+        # itself must not change (see test_geo_linked_source_* below).
+        assert artifacts == {"pmc_xml": b"<xml/>",
+                             "geo_linked_source": "pmc_fulltext"}
+
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_geo_linked_source_records_the_underlying_rung(
+            self, mock_fetch_pm, mock_resolve):
+        """A GEO-reached PMC full text must stay identifiable as PMC.
+
+        The label is deliberately still ``geo_linked_fulltext`` — it is
+        exact-matched against ``_FULLTEXT_SOURCES``, so changing it would make
+        ``is_fulltext`` False. The provenance rides alongside instead.
+        """
+        for rung in ("pmc_fulltext", "europepmc_fulltext", "unpaywall_pdf"):
+            mock_fetch_pm.return_value = FAKE_LINKED_PAPER
+            mock_resolve.return_value = ("body", rung, {})
+            _, source, artifacts = _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
+            assert source == "geo_linked_fulltext"
+            assert artifacts["geo_linked_source"] == rung
+
+    @patch("biolit.pipeline.resolve_fulltext")
+    @patch("biolit.pipeline.fetch_pubmed_metadata")
+    def test_geo_linked_source_does_not_mutate_the_caller_artifacts(
+            self, mock_fetch_pm, mock_resolve):
+        """The resolver must not write into the dict its callee handed back."""
+        shared = {"pmc_xml": b"<xml/>"}
+        mock_fetch_pm.return_value = FAKE_LINKED_PAPER
+        mock_resolve.return_value = ("body", "pmc_fulltext", shared)
+        _resolve_geo_fulltext(GEO_PAPER_WITH_PMIDS)
+        assert shared == {"pmc_xml": b"<xml/>"}
 
     @patch("biolit.pipeline.resolve_fulltext")
     @patch("biolit.pipeline.fetch_pubmed_metadata")
