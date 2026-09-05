@@ -374,6 +374,26 @@ def _more_than_abstract(secs: dict) -> bool:
     return bool(set(secs) - _NON_BODY_SECTION_KEYS)
 
 
+def _char_budget(max_tokens: int | None) -> int | None:
+    """Character budget for ``max_tokens``, or ``None`` for "no budget".
+
+    ``select_sections`` documents ``max_tokens=None`` (or 0) as the way to
+    disable the budget entirely, "for any consumer that is not an LLM" — and
+    ``resolve_fulltext`` types the parameter ``int | None``. Three sites here
+    nevertheless computed ``max_tokens * 4`` directly, so the documented value
+    raised ``TypeError: unsupported operand type(s) for *: 'NoneType' and
+    'int'`` instead of lifting the cap.
+
+    It surfaced as a fetch failure rather than a crash: ``fetch_paper`` wraps
+    the resolver in ``except Exception`` and keeps only the type name, so the
+    run recorded ``resolve_error:TypeError`` with empty text and carried on. On
+    a 200-accession sample of Gemma studies (2026-09-05) that was 58 of 200 —
+    every GEO record reaching the ``geo_record`` fallback — and it read as a
+    coverage problem, not a bug.
+    """
+    return None if not max_tokens else max_tokens * 4
+
+
 def resolve_fulltext(
     paper: dict,
     unpaywall_email: str | None = None,
@@ -537,7 +557,7 @@ def resolve_fulltext(
         html_text = fetch_landing_page_html(doi=doi, url=None if doi else page_url)
         if html_text:
             artifacts["landing_page_html"] = html_text.encode("utf-8")
-            return html_text[: max_tokens * 4], "landing_page_html", artifacts
+            return html_text[: _char_budget(max_tokens)], "landing_page_html", artifacts
 
     # 12. Abstract fallback
     # For DOI-only preprints, fetch_record() already populated paper["abstract"]
@@ -711,8 +731,9 @@ def _resolve_geo_fulltext(
         return f"{geo_prefix}{first_linked_abstract}", "geo_linked_abstract", first_linked_artifacts
 
     geo_text = paper.get("abstract", "")
-    if len(geo_text) > max_tokens * 4:
-        geo_text = geo_text[:max_tokens * 4]
+    budget = _char_budget(max_tokens)
+    if budget is not None and len(geo_text) > budget:
+        geo_text = geo_text[:budget]
     return geo_metadata or geo_text, "geo_record", {}
 
 
