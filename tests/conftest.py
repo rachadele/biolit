@@ -100,3 +100,66 @@ def sample_jats_xml() -> bytes:
 """
 
 
+@pytest.fixture
+def floats_group_jats_xml() -> bytes:
+    """JATS XML in PMC's HOISTED-FLOAT layout.
+
+    PMC lifts every <table-wrap> and <fig> out of the body into a
+    <floats-group> sibling of <body>, leaving only an <xref> in the prose.
+    Modelled on PMID 38761795 (Mol Cell 2024), whose only <table-wrap> sits at
+    /pmc-articleset/article/floats-group/table-wrap, is captioned "Key
+    resources table" and carries 13 RRIDs — none of which reached the parsed
+    text before the floats collector existed.
+
+    The <fig> is here so tests can pin that figure captions are NOT swept in
+    with the tables.
+    """
+    return b"""<?xml version="1.0" encoding="UTF-8"?>
+<pmc-articleset>
+<article>
+  <front>
+    <article-meta>
+      <abstract>
+        <p>We profiled human monocytes.</p>
+      </abstract>
+    </article-meta>
+  </front>
+  <body>
+    <sec>
+      <title>Results</title>
+      <p>Reagents are listed in the
+      <xref ref-type="table" rid="T1">key resources table</xref>.</p>
+    </sec>
+    <sec>
+      <title>STAR Methods</title>
+      <sec>
+        <title>Cell culture</title>
+        <p>Cells were maintained in RPMI-1640.</p>
+      </sec>
+    </sec>
+  </body>
+  <floats-group>
+    <fig id="F1">
+      <label>Figure 1</label>
+      <caption><p>UMAP embedding of monocytes.</p></caption>
+    </fig>
+    <table-wrap id="T1">
+      <caption><p>Key resources table</p></caption>
+      <table>
+        <thead>
+          <tr><th>REAGENT or RESOURCE</th><th>SOURCE</th><th>IDENTIFIER</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Antibodies</td><td></td><td></td></tr>
+          <tr><td>anti-human CD14 Antibody</td><td>BioLegend</td>
+              <td>Cat# 325611; RRID: AB_830684</td></tr>
+          <tr><td>Experimental models: Cell lines</td><td></td><td></td></tr>
+          <tr><td>THP-1</td><td>ATCC</td>
+              <td>Cat# TIB-202; RRID: CVCL_0006</td></tr>
+        </tbody>
+      </table>
+    </table-wrap>
+  </floats-group>
+</article>
+</pmc-articleset>
+"""

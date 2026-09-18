@@ -2,6 +2,22 @@
 
 DEFAULT_MAX_TOKENS = 12_500  # ~50 000 chars at ~4 chars/token
 
+#: Key for the section holding <table-wrap> elements the document hoisted out
+#: of its body (PMC <floats-group>). Defined HERE, beside the registry below,
+#: and imported by the parser — the two were separate string literals once, and
+#: renaming one would have silently un-registered the section and re-armed the
+#: fallback bug the registry exists to prevent.
+#:
+#: It must contain a substring some caller passes as `wanted` (curation callers
+#: pass "methods"), or `select_sections` drops it and the collector is inert.
+TABLES_SECTION_KEY = "methods: tables"
+
+#: Section keys the PARSER synthesizes rather than reading off a heading in the
+#: document. They participate in selection normally, but must not satisfy the
+#: "did we recognize any of this paper's headings?" test in `select_sections` —
+#: see the comment there. Any future synthesized section belongs here.
+SYNTHETIC_SECTION_KEYS = frozenset({TABLES_SECTION_KEY})
+
 
 def select_sections(
     sections: dict[str, str],
@@ -34,7 +50,18 @@ def select_sections(
                 if w.lower() in key.lower():
                     chosen[key] = text
                     break
-        if not chosen:
+        # 🛑 The fallback asks "did we recognize any of THIS PAPER'S headings?"
+        # If none matched, filtering would throw the paper away, so hand back
+        # everything instead. A SYNTHESIZED section is not evidence that
+        # heading recognition worked: the parser keys a hoisted <table-wrap>
+        # itself, so a paper whose headings are all unrecognized (Cell Press
+        # "Experimental Procedures", say) would suddenly "match", switch the
+        # safety net off, and be reduced to its tables.
+        #
+        # Measured on PMC before this guard existed: PMC7614342 went 38,204 ->
+        # 2,821 selected chars, a 93% loss, and 18 of 207 sampled papers (8.7%)
+        # depend on this fallback.
+        if not any(k not in SYNTHETIC_SECTION_KEYS for k in chosen):
             chosen = sections
     else:
         chosen = sections
