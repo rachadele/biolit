@@ -2,6 +2,11 @@
 
 All notable changes to `biolit` are documented here.
 
+## [Unreleased]
+
+### Fixed
+- **PDF: text extraction no longer hangs on some PDFs** — pdfminer's default layout analysis groups text boxes hierarchically through a heap loop that, on PMID 28485405's PDF, ran at 100% CPU and ~1.7 GB with no end, stalling the whole run (and the MCP `run_pipeline` call until its 30-minute idle timeout). `_extract_text` now passes `LAParams(boxes_flow=None)`, which skips that grouping and orders text boxes by page position.
+
 ## [0.1.41] — 2026-08-19
 
 ### Fixed

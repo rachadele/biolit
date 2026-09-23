@@ -39,7 +39,11 @@ def _extract_text(pdf_bytes: bytes) -> str:
         from pdfminer.layout import LAParams
 
         out = io.StringIO()
-        extract_text_to_fp(io.BytesIO(pdf_bytes), out, laparams=LAParams())
+        # boxes_flow=None skips pdfminer's hierarchical text-box grouping, a
+        # heap loop that spun at 100% CPU (~1.7 GB) with no end on PMID 28485405.
+        extract_text_to_fp(
+            io.BytesIO(pdf_bytes), out, laparams=LAParams(boxes_flow=None)
+        )
         return out.getvalue()
     except ImportError:
         raise ImportError("Install pdfminer.six: pip install pdfminer.six")
