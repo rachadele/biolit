@@ -8,6 +8,12 @@ _BATCH_POLL_MAX     = 30   # seconds between polls once stable
 _BATCH_TIMEOUT      = 6 * 3600  # 6 hours
 
 
+def _text(content) -> str:
+    """Join the text blocks of a response; models with extended thinking put a
+    ThinkingBlock (no .text) ahead of the answer."""
+    return "".join(b.text for b in content if getattr(b, "type", None) == "text")
+
+
 class AnthropicClient(BaseLLMClient):
     def __init__(self, model: str, api_key: str | None = None):
         super().__init__(model)
@@ -34,7 +40,7 @@ class AnthropicClient(BaseLLMClient):
     def chat(self, messages: list[dict], max_tokens: int = 512) -> str:
         kwargs = self._messages_kwargs(messages, max_tokens)
         response = self._client.messages.create(**kwargs)
-        return response.content[0].text
+        return _text(response.content)
 
     def chat_batch(self, messages_list: list[list[dict]], max_tokens: int = 512) -> list[str]:
         """Submit all messages as a single Anthropic Message Batch (50 % cheaper).
@@ -78,6 +84,6 @@ class AnthropicClient(BaseLLMClient):
         for result in self._client.messages.batches.results(batch_id):
             idx = int(result.custom_id)
             if result.result.type == "succeeded":
-                results[idx] = result.result.message.content[0].text
+                results[idx] = _text(result.result.message.content)
         return results
 

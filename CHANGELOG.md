@@ -5,6 +5,7 @@ All notable changes to `biolit` are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **Anthropic: replies from extended-thinking models** — `AnthropicClient` read `response.content[0].text`, but models with extended thinking (e.g. `claude-sonnet-5`) return a `ThinkingBlock` first, which has no `.text`, so every call failed with `'ThinkingBlock' object has no attribute 'text'`. `chat` and `chat_batch` now join the text blocks and skip the rest.
 - **PDF: text extraction no longer hangs on some PDFs** — pdfminer's default layout analysis groups text boxes hierarchically through a heap loop that, on PMID 28485405's PDF, ran at 100% CPU and ~1.7 GB with no end, stalling the whole run (and the MCP `run_pipeline` call until its 30-minute idle timeout). `_extract_text` now passes `LAParams(boxes_flow=None)`, which skips that grouping and orders text boxes by page position.
 
 ## [0.1.41] — 2026-08-19
